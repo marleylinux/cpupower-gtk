@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=cpupower-gtk
+Comment=GTK4 graphical interface for cpupower CPU power management
+Exec=cpupower-gtk
+Icon=com.marley.cpupower-gtk
+Terminal=false
+Type=Application
+Categories=Utility;GTK;System;
+Keywords=cpupower;cpu;frequency;governor;boost;amd;intel;performance;
+StartupNotify=true
+StartupWMClass=com.marley.cpupower-gtk

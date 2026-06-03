@@ -1,0 +1,494 @@
+"""CSS styles for cpupower-gtk UI"""
+
+CSS = """
+/* Define theme colors and fallbacks */
+@define-color semantic_green #30d158;
+@define-color semantic_yellow #ffd60a;
+@define-color semantic_red #ff3b30;
+@define-color warning_red #e01b24;
+@define-color sidebar_bg_color mix(@window_bg_color, @window_fg_color, 0.02);
+
+/* ─── Window & Background ─────────────────────────────────── */
+window.cpupower-win {
+    background-color: @window_bg_color;
+}
+
+/* ─── Header bar premium aesthetics ───────────────────────── */
+.main-header {
+    background-color: transparent;
+    box-shadow: none;
+    border-bottom: none;
+}
+
+.sidebar-header {
+    background-color: transparent;
+    box-shadow: none;
+    border-bottom: none;
+}
+
+/* ─── Dashboard Flat Aesthetics ────────────────────────────── */
+.dashboard-group list,
+.dashboard-group listbox,
+.dashboard-group .boxed-list {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.dashboard-group row,
+.dashboard-group listboxrow {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+/* ─── Dashboard Hero Banner ────────────────────────────────── */
+.hero-box {
+    padding: 24px;
+    margin-bottom: 16px;
+    background: radial-gradient(circle at top center, alpha(@accent_bg_color, 0.18) 0%, alpha(@accent_bg_color, 0.05) 40%, transparent 100%);
+    border-radius: 20px;
+    border: 1px solid alpha(@accent_bg_color, 0.15);
+}
+
+.hero-icon {
+    color: @accent_bg_color;
+    -gtk-icon-shadow: 0 0 20px alpha(@accent_bg_color, 0.5);
+}
+
+.hero-title {
+    font-size: 30px;
+    font-weight: 1000;
+    letter-spacing: -1.2px;
+    color: @window_fg_color;
+    text-shadow: 0 2px 4px alpha(black, 0.15);
+}
+
+.hero-subtitle {
+    font-size: 13px;
+    font-weight: 700;
+    color: alpha(@window_fg_color, 0.45);
+}
+
+.hero-cpu-badge {
+    background-color: alpha(@accent_bg_color, 0.1);
+    color: @accent_bg_color;
+    border: 1px solid alpha(@accent_bg_color, 0.25);
+    border-radius: 8px;
+    padding: 2px 10px;
+    font-weight: 900;
+    font-size: 11px;
+    margin-left: 8px;
+}
+
+@keyframes status-pulse {
+    0% {
+        background-color: alpha(@semantic_green, 0.2);
+        border-color: alpha(@semantic_green, 0.4);
+    }
+    50% {
+        background-color: alpha(@semantic_green, 0.4);
+        border-color: alpha(@semantic_green, 0.8);
+    }
+    100% {
+        background-color: alpha(@semantic_green, 0.2);
+        border-color: alpha(@semantic_green, 0.4);
+    }
+}
+
+.live-status-pill {
+    background-color: alpha(@semantic_green, 0.2);
+    color: @semantic_green;
+    border: 1px solid alpha(@semantic_green, 0.4);
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+/* ─── Category section headers ─────────────────────────────── */
+.section-title-box {
+    margin-top: 24px;
+    margin-bottom: 12px;
+    padding: 0 4px;
+}
+
+.section-title-label {
+    font-size: 15px;
+    font-weight: bold;
+    color: @window_fg_color;
+}
+
+.category-icon {
+    color: @accent_bg_color;
+    margin-right: 8px;
+    -gtk-icon-size: 18px;
+}
+
+/* ─── Premium Monitor Cards ────────────────────────────────── */
+.monitor-card {
+    background-color: alpha(@window_fg_color, 0.03);
+    background-image: linear-gradient(145deg, alpha(@window_fg_color, 0.02), transparent);
+    border: 1px solid alpha(@window_fg_color, 0.08);
+    border-radius: 18px;
+    padding: 16px;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 4px alpha(black, 0.03);
+}
+
+.monitor-card:hover {
+    background-color: alpha(@window_fg_color, 0.06);
+    border-color: alpha(@accent_bg_color, 0.35);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 16px alpha(black, 0.08);
+}
+
+.monitor-name-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: alpha(@window_fg_color, 0.45);
+}
+
+.monitor-limit-badge {
+    font-size: 9.5px;
+    font-weight: bold;
+    color: @accent_bg_color;
+    background-color: alpha(@accent_bg_color, 0.1);
+    border: 1px solid alpha(@accent_bg_color, 0.2);
+    border-radius: 8px;
+    padding: 2px 6px;
+}
+
+.monitor-value-label {
+    font-size: 24px;
+    font-weight: 900;
+    color: @accent_bg_color;
+    font-variant-numeric: tabular-nums;
+}
+
+.monitor-unit-label {
+    font-size: 12px;
+    font-weight: bold;
+    color: alpha(@window_fg_color, 0.4);
+    margin-bottom: 3px;
+}
+
+.monitor-icon {
+    color: alpha(@window_fg_color, 0.4);
+    margin-right: 6px;
+    -gtk-icon-size: 16px;
+}
+
+/* ─── Usage level bars ─────────────────────────────────────── */
+progressbar.usage-bar {
+    min-height: 8px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+
+progressbar.usage-bar trough {
+    border-radius: 4px;
+    background-color: alpha(@window_fg_color, 0.06);
+    min-height: 8px;
+    border: none;
+}
+
+progressbar.usage-bar progress {
+    border-radius: 4px;
+    min-height: 8px;
+    border: none;
+    transition: background-color 0.4s ease;
+}
+
+progressbar.usage-bar.low progress {
+    background-color: @semantic_green;
+    box-shadow: 0 0 12px alpha(@semantic_green, 0.3);
+}
+
+progressbar.usage-bar.medium progress {
+    background-color: @semantic_yellow;
+    box-shadow: 0 0 12px alpha(@semantic_yellow, 0.3);
+}
+
+progressbar.usage-bar.high progress {
+    background-color: @semantic_red;
+    box-shadow: 0 0 12px alpha(@semantic_red, 0.3);
+}
+
+/* ─── Slider rows (Setting Pages) ─────────────────────────── */
+.slider-row-item {
+    border-radius: 16px;
+    margin: 4px 0;
+    padding: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.slider-row-item:hover {
+    background-color: alpha(@window_fg_color, 0.03);
+}
+
+.live-badge {
+    background-color: alpha(@semantic_green, 0.15);
+    color: @semantic_green;
+    border: 1px solid alpha(@semantic_green, 0.3);
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+
+.target-badge {
+    background-color: alpha(@accent_bg_color, 0.12);
+    color: @accent_bg_color;
+    border: 1px solid alpha(@accent_bg_color, 0.3);
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+
+
+
+/* ─── Setting Tags ─────────────────────────── */
+.tag-energy {
+    background-color: @energy_badge_bg;
+    color: @energy_badge_fg;
+    border: 1px solid @energy_badge_border;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.tag-performance {
+    background-color: @perf_badge_bg;
+    color: @perf_badge_fg;
+    border: 1px solid @perf_badge_border;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.tag-system {
+    background-color: @system_badge_bg;
+    color: @system_badge_fg;
+    border: 1px solid @system_badge_border;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.monitor-tag-badge {
+    font-size: 10px;
+    font-weight: 900;
+    border-radius: 6px;
+    padding: 3px 8px;
+    text-transform: uppercase;
+}
+
+.tag-amd {
+    background-color: @amd_badge_bg;
+    color: @amd_badge_fg;
+    border: 1px solid @amd_badge_border;
+}
+
+.tag-intel {
+    background-color: @intel_badge_bg;
+    color: @intel_badge_fg;
+    border: 1px solid @intel_badge_border;
+}
+
+.tag-live {
+    background-color: @live_badge_bg;
+    color: @live_badge_fg;
+    border: 1px solid @live_badge_border;
+}
+
+/* ─── Preset buttons ───────────────────────────────────────── */
+.preset-row {
+    padding: 16px 24px;
+    background-color: transparent;
+    border: none;
+}
+
+.preset-btn {
+    border-radius: 28px;
+    padding: 10px 28px;
+    font-weight: 900;
+    font-size: 15px;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    min-height: 48px;
+    border: 1px solid transparent;
+}
+
+.preset-btn:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px alpha(black, 0.2);
+}
+
+.btn-power-saving {
+    background-color: alpha(@semantic_green, 0.18);
+    color: @semantic_green;
+    border-color: alpha(@semantic_green, 0.4);
+}
+
+.btn-balance {
+    background-color: alpha(@semantic_yellow, 0.18);
+    color: @semantic_yellow;
+    border-color: alpha(@semantic_yellow, 0.4);
+}
+
+.btn-max-performance {
+    background-color: alpha(@semantic_red, 0.18);
+    color: @semantic_red;
+    border-color: alpha(@semantic_red, 0.4);
+}
+
+/* ─── Apply button ────────────────────────────────────────── */
+.apply-btn {
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
+    border-radius: 28px;
+    padding: 10px 40px;
+    font-weight: 900;
+    font-size: 15px;
+    min-height: 48px;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 6px 16px alpha(@accent_bg_color, 0.35);
+}
+
+.apply-btn:hover {
+    background-color: shade(@accent_bg_color, 1.25);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 28px alpha(@accent_bg_color, 0.5);
+}
+
+/* ─── Navigation & Sidebar ─────────────────────────────────── */
+.sidebar-pane {
+    background-color: @sidebar_bg_color;
+    border-right: 1px solid alpha(@window_fg_color, 0.05);
+}
+
+.navigation-sidebar row {
+    border-radius: 10px;
+    margin: 2px 8px;
+    padding: 8px 12px;
+    transition: all 0.2s ease;
+}
+
+.navigation-sidebar row image {
+    -gtk-icon-size: 20px;
+    margin-right: 10px;
+    color: inherit;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+}
+
+.navigation-sidebar row label {
+    font-size: 14px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+}
+
+.navigation-sidebar row:hover {
+    background-color: alpha(@window_fg_color, 0.05);
+}
+
+.navigation-sidebar row:selected {
+    background-color: alpha(@accent_bg_color, 0.12);
+    color: @accent_bg_color;
+}
+
+.navigation-sidebar row:selected image {
+    color: @accent_bg_color;
+    opacity: 1.0;
+}
+
+/* ─── Diagnostics Warning Banner ─────────────────────────── */
+.diagnostic-warning-row {
+    background-color: alpha(@warning_red, 0.12);
+    border: 1px solid alpha(@warning_red, 0.35);
+    border-radius: 12px;
+    padding: 16px;
+    margin: 8px 0;
+    transition: all 0.3s ease;
+}
+
+.diagnostic-warning-row label.title {
+    color: @warning_red;
+    font-weight: 800;
+    font-size: 16px;
+}
+
+.diagnostic-warning-row label.subtitle {
+    color: alpha(@window_fg_color, 0.8);
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+/* ─── Slider Rows Custom Styling ──────────────────────────── */
+.slider-row-flag {
+    padding-bottom: 2px;
+}
+
+.slider-row-desc {
+    opacity: 0.7;
+}
+
+.step-btn {
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.2px;
+    min-width: 34px;
+    min-height: 26px;
+    padding: 0 6px;
+    border-radius: 13px;
+    background-color: alpha(@window_fg_color, 0.05);
+    color: alpha(@window_fg_color, 0.45);
+    border: 1px solid alpha(@window_fg_color, 0.08);
+    transition: all 0.2s ease;
+}
+
+.step-btn:hover {
+    background-color: alpha(@accent_bg_color, 0.12);
+    color: @accent_bg_color;
+    border-color: alpha(@accent_bg_color, 0.3);
+    opacity: 1.0;
+}
+
+.step-btn:active {
+    background-color: alpha(@accent_bg_color, 0.2);
+}
+
+.adj-btn {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    transition: all 0.2s ease;
+    opacity: 0.7;
+}
+
+.adj-btn:hover {
+    opacity: 1.0;
+    background-color: alpha(@window_fg_color, 0.08);
+}
+
+.cpu-badge {
+    background-color: alpha(#e5a50a, 0.15);
+    color: #e5a50a;
+    border: 1px solid alpha(#e5a50a, 0.4);
+    border-radius: 10px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 900;
+}
+"""
