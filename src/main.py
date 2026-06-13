@@ -728,8 +728,9 @@ class CpupowerApp(Adw.Application):
             self.on_apply_custom_profile(profile_name)
 
     def on_apply_custom_profile(self, pname: str) -> None:
-        if not self.btn_apply.get_sensitive():
+        if getattr(self, "_toggling_profile", False):
             return
+        self._toggling_profile = True
         profiles = settings_module.load_profiles()
         if pname in profiles:
             pdata = profiles[pname]
@@ -764,6 +765,7 @@ class CpupowerApp(Adw.Application):
             threading.Thread(target=go, daemon=True).start()
 
     def _on_custom_profile_applied(self, ok: bool, msg: str, pname: str, pdata: dict) -> bool:
+        self._toggling_profile = False
         self._set_actions_sensitive(True)
         if ok:
             self.applied_settings.update(pdata)
