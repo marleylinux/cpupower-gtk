@@ -12,6 +12,6 @@ pkgbase = cpupower-gtk
 	depends = libadwaita
 	depends = cpupower
 	source = cpupower-gtk-1.0.1-3.tar.gz::https://github.com/marleylinux/cpupower-gtk/archive/refs/tags/v1.0.1-3.tar.gz
-	sha256sums = 9162cd09ea0f0dff7d62f02c98e6fc910931330920f986ff5b10de16c4f06f6c
+	sha256sums = a8b6c5227fcc90915627c90849e7226cd94703f6bfc9df4acd80babb49a438b6
 
 pkgname = cpupower-gtk
