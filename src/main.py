@@ -20,10 +20,11 @@ log = logging.getLogger(__name__)
 
 APP_ID = "com.marley.cpupower-gtk"
 APP_NAME = "cpupower-gtk"
-APP_VER = "1.0.0"
+APP_VER = "1.0.1"
 
 
 def get_backend_path() -> str:
+    """Return the path to backend.py, preferring the installed system copy."""
     installed_backend = "/usr/share/cpupower-gtk/backend.py"
     if os.path.exists(installed_backend):
         return installed_backend
@@ -51,7 +52,6 @@ class CpupowerApp(Adw.Application):
             "battery_profile": "",
         }
         self.last_ac_state: bool | None = None
-        self.dbus_system_connection = None
         self.last_cpu_ticks: dict = {}
 
         # UI controls
@@ -137,22 +137,8 @@ class CpupowerApp(Adw.Application):
 
         self.win.present()
 
-        # D-Bus Subscribe for waking up from sleep
-        try:
-            self.dbus_system_connection = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-            if self.dbus_system_connection:
-                self.dbus_system_connection.signal_subscribe(
-                    "org.freedesktop.login1",
-                    "org.freedesktop.login1.Manager",
-                    "PrepareForSleep",
-                    "/org/freedesktop/login1",
-                    None,
-                    Gio.DBusSignalFlags.NONE,
-                    self.on_prepare_for_sleep
-                )
-                log.info("Subscribed to PrepareForSleep D-Bus signal.")
-        except Exception as e:
-            log.warning("Failed to connect to System D-Bus: %s", e)
+        # Wake-from-sleep settings restoration is now handled silently at the system level
+        # via the systemd system-sleep hook script.
 
         # Load settings into UI components
         self._load_pending_settings_to_ui()
@@ -311,8 +297,8 @@ class CpupowerApp(Adw.Application):
                 ticks = system.get_cpu_usage_ticks()
                 caps = backend.get_cpu_capabilities()
                 GLib.idle_add(self._on_refresh_done, temp, avg_clk, clocks, ticks, caps)
-            except Exception as e:
-                log.error("Refresh fetch error: %s", e)
+            except Exception:
+                log.error("Refresh fetch error", exc_info=True)
                 GLib.idle_add(self._on_refresh_done, None, None, [], {}, {})
 
         threading.Thread(target=fetch, daemon=True).start()
@@ -344,7 +330,10 @@ class CpupowerApp(Adw.Application):
         if hasattr(self, "card_gov"):
             self.card_gov._val_lbl.set_text(caps.get("current_governor", "—"))
         if hasattr(self, "card_boost"):
-            self.card_boost._val_lbl.set_text("Active" if caps.get("boost_active") else "Inactive")
+            if caps.get("boost_supported"):
+                self.card_boost._val_lbl.set_text("Active" if caps.get("boost_active") else "Inactive")
+            else:
+                self.card_boost._val_lbl.set_text("Unsupported")
             
         if hasattr(self, "card_min_limit"):
             self.card_min_limit._val_lbl.set_text(format_freq(caps.get("scaling_min")))
@@ -782,52 +771,8 @@ class CpupowerApp(Adw.Application):
             self._do_refresh_async()
         else:
             self._show_toast(msg, is_error=True)
+            self.pending_settings = dict(self.applied_settings)
             self._load_pending_settings_to_ui()
-        return False
-
-    # ── Sleep / Wake tracking ──────────────────────────────────────────────────
-
-    def on_prepare_for_sleep(self, connection, sender_name, object_path, interface_name, signal_name, parameters, user_data):
-        try:
-            is_about_to_sleep = parameters.get_child_value(0).get_boolean()
-            if not is_about_to_sleep:
-                log.info("System resumed from sleep. Restoring CPU power configuration...")
-                GLib.timeout_add(3000, self._restore_after_sleep)
-        except Exception as e:
-            log.error("PrepareForSleep parse exception: %s", e)
-
-    def _restore_after_sleep(self) -> bool:
-        if self.ui_settings.get("auto_switch", False):
-            current_ac = system.is_on_ac_power()
-            self.last_ac_state = current_ac
-            profile_key = "ac_profile" if current_ac else "battery_profile"
-            if self.ui_settings.get(profile_key, ""):
-                # A profile is configured — let auto-switch handle the restore.
-                self._apply_auto_power_profile(current_ac)
-                return False
-            # No profile assigned for this power state; fall through to manual restore.
-
-        if not self.applied_settings:
-            return False
-
-        log.info("Restoring active CPU settings after sleep: %s", self.applied_settings)
-
-        backend_path = get_backend_path()
-        user_config_path = os.path.expanduser("~/.config/cpupower-gtk/settings.json")
-
-        def reapply():
-            cmd = ["pkexec", backend_path, "--apply-user-config", user_config_path]
-            try:
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                if res.returncode == 0:
-                    log.info("CPU settings restored successfully after sleep.")
-                    GLib.idle_add(self._show_toast, "CPU power settings automatically restored after sleep.", False)
-                else:
-                    log.error("Failed to restore CPU settings: %s", res.stderr or res.stdout)
-            except Exception as e:
-                log.error("Failed to execute sleep restore: %s", e)
-
-        threading.Thread(target=reapply, daemon=True).start()
         return False
 
     # ── UI Toast & About dialog helpers ────────────────────────────────────────
@@ -838,18 +783,20 @@ class CpupowerApp(Adw.Application):
         self.toast_overlay.add_toast(toast)
 
     def on_about_activated(self, _action, _param) -> None:
-        dialog = Adw.AboutWindow(
-            transient_for=self.win,
-            application_name=APP_NAME,
-            application_icon=APP_ID,
-            developer_name="Marley",
-            version=APP_VER,
-            website="https://github.com/marleylinux/cpupower-gtk",
-            issue_bug_report_url="https://github.com/marleylinux/cpupower-gtk/issues",
-            copyright="© 2026 Marley",
-            license_type=Gtk.License.GPL_3_0,
+        about = Adw.AboutDialog()
+        about.set_application_name(APP_NAME)
+        about.set_application_icon(APP_ID)
+        about.set_version(APP_VER)
+        about.set_developer_name("Marley")
+        about.set_website("https://github.com/marleylinux/cpupower-gtk")
+        about.set_issue_url("https://github.com/marleylinux/cpupower-gtk/issues")
+        about.set_license_type(Gtk.License.GPL_3_0)
+        about.set_comments(
+            "A modern GTK4 / Libadwaita graphical wrapper for cpupower.\n"
+            "Manage CPU frequency scaling and governors with ease."
         )
-        dialog.present()
+        about.set_developers(["Marley"])
+        about.present(self.win)
 
     def on_startup_switch_toggled(self, switch_row, _spec) -> None:
         """Enable or disable the startup systemd service via settings helper"""

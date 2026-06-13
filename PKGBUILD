@@ -1,11 +1,11 @@
 # Maintainer: Marley <warburtonmarley@proton.me>
 pkgname=cpupower-gtk
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 pkgdesc="A modern, polished GTK4/Libadwaita graphical interface for cpupower CPU power management."
 arch=('any')
 url="https://github.com/marleylinux/cpupower-gtk"
-license=('GPL3')
+license=('GPL-3.0-only')
 install=cpupower-gtk.install
 depends=('python>=3.11' 'python-gobject' 'gtk4' 'libadwaita' 'cpupower')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/marleylinux/cpupower-gtk/archive/refs/tags/v${pkgver}.tar.gz")
@@ -40,6 +40,10 @@ package() {
 
   # systemd service override
   install -Dm644 "cpupower-gtk.conf" "$pkgdir/usr/lib/systemd/system/cpupower.service.d/cpupower-gtk.conf"
+
+  # systemd sleep hook
+  install -Dm755 "cpupower-gtk-sleep" "$pkgdir/usr/lib/systemd/system-sleep/cpupower-gtk"
+
 
   # binary launcher
   install -d "$pkgdir/usr/bin"

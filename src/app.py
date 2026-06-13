@@ -5,7 +5,7 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import init_gi  # noqa: F401, E402
-from main import CpupowerApp
+from main import CpupowerApp  # noqa: E402
 
 if __name__ == "__main__":
     app = CpupowerApp()

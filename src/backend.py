@@ -388,16 +388,96 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
         return False, "\n".join(msgs)
 
 
+def get_preset_settings(preset: str, caps: dict) -> dict:
+    """Generate settings dict for a given preset based on CPU capabilities"""
+    settings = {}
+    phy_min = caps.get("cpuinfo_min", 0.0)
+    if phy_min <= 0.0:
+        phy_min = 600.0
+        
+    phy_max = caps.get("cpuinfo_max", 0.0)
+    if phy_max <= 0.0:
+        phy_max = 3000.0
+
+    if preset == "power-saving":
+        govs = caps.get("governors", [])
+        if "powersave" in govs:
+            settings["governor"] = "powersave"
+        elif "conservative" in govs:
+            settings["governor"] = "conservative"
+
+        if caps.get("epp_available"):
+            epps = caps.get("epp_preferences", [])
+            if "power" in epps:
+                settings["epp"] = "power"
+            elif "balance_power" in epps:
+                settings["epp"] = "balance_power"
+
+        if caps.get("epb_available"):
+            settings["epb"] = 15
+
+        if caps.get("boost_supported"):
+            settings["boost"] = False
+
+        settings["min_freq"] = float(phy_min)
+        settings["max_freq"] = float(phy_min + (phy_max - phy_min) * 0.3)
+
+    elif preset == "balanced":
+        govs = caps.get("governors", [])
+        if "schedutil" in govs:
+            settings["governor"] = "schedutil"
+        elif "ondemand" in govs:
+            settings["governor"] = "ondemand"
+        elif "powersave" in govs:
+            settings["governor"] = "powersave"
+
+        if caps.get("epp_available"):
+            epps = caps.get("epp_preferences", [])
+            if "balance_performance" in epps:
+                settings["epp"] = "balance_performance"
+            elif "default" in epps:
+                settings["epp"] = "default"
+
+        if caps.get("epb_available"):
+            settings["epb"] = 6
+
+        if caps.get("boost_supported"):
+            settings["boost"] = True
+
+        settings["min_freq"] = float(phy_min)
+        settings["max_freq"] = float(phy_max)
+
+    elif preset == "max-performance":
+        govs = caps.get("governors", [])
+        if "performance" in govs:
+            settings["governor"] = "performance"
+
+        if caps.get("epp_available"):
+            epps = caps.get("epp_preferences", [])
+            if "performance" in epps:
+                settings["epp"] = "performance"
+
+        if caps.get("epb_available"):
+            settings["epb"] = 0
+
+        if caps.get("boost_supported"):
+            settings["boost"] = True
+
+        settings["min_freq"] = float(phy_max * 0.8)
+        settings["max_freq"] = float(phy_max)
+
+    return settings
+
+
 if __name__ == "__main__":
-    # Handle Boot Apply — prefer user JSON (authoritative), fallback to bash config
+    # Handle Boot / Sleep Apply — prefer user JSON/auto-switch (authoritative), fallback to bash config
     if len(sys.argv) > 1 and sys.argv[1] == "--apply-saved":
         settings = {}
 
-        # 1. Try user JSON first — this is what the GUI actually saved.
+        # 1. Try user configurations first.
         # When running as root under systemd, HOME=/root and SUDO_USER is unset.
-        # We scan all real user homes (UID >= 1000) for a settings.json file.
+        # We scan all real user homes (UID >= 1000) for settings/ui configurations.
         import pwd
-        user_json = None
         candidates = []
 
         # Check env vars set by sudo/pkexec in case this is called interactively
@@ -418,21 +498,52 @@ if __name__ == "__main__":
             if entry.pw_uid >= 1000 and entry.pw_dir not in candidates:
                 candidates.append(entry.pw_dir)
 
+        caps = get_cpu_capabilities()
         for home in candidates:
+            # Check for auto_switch configuration
+            ui_config = os.path.join(home, ".config/cpupower-gtk/ui.json")
+            if os.path.exists(ui_config):
+                try:
+                    with open(ui_config, "r") as f:
+                        ui_settings = json.load(f)
+                    if ui_settings.get("auto_switch", False):
+                        import system
+                        is_ac = system.is_on_ac_power()
+                        profile_key = "ac_profile" if is_ac else "battery_profile"
+                        profile_name = ui_settings.get(profile_key, "")
+                        if profile_name:
+                            if profile_name == "__power_saving__":
+                                settings = get_preset_settings("power-saving", caps)
+                                log.info("Auto-switch enabled: resolved to Power Saving preset (is_ac=%s)", is_ac)
+                                break
+                            elif profile_name == "__max_performance__":
+                                settings = get_preset_settings("max-performance", caps)
+                                log.info("Auto-switch enabled: resolved to Max Performance preset (is_ac=%s)", is_ac)
+                                break
+                            else:
+                                profiles_path = os.path.join(home, ".config/cpupower-gtk/profiles.json")
+                                if os.path.exists(profiles_path):
+                                    with open(profiles_path, "r") as pf:
+                                        profiles = json.load(pf)
+                                    if profile_name in profiles:
+                                        settings = profiles[profile_name]
+                                        log.info("Auto-switch enabled: resolved to profile '%s' (is_ac=%s)", profile_name, is_ac)
+                                        break
+                except Exception as e:
+                    log.warning("Failed to resolve auto-switch profile in %s: %s", home, e)
+
+            # Fallback to standard settings.json
             path = os.path.join(home, ".config/cpupower-gtk/settings.json")
             if os.path.exists(path):
-                user_json = path
-                break
+                try:
+                    with open(path, "r") as f:
+                        settings = json.load(f)
+                    log.info("Loaded user settings from %s", path)
+                    break
+                except Exception as e:
+                    log.warning("Failed to read user JSON settings in %s: %s", home, e)
 
-        if user_json:
-            try:
-                with open(user_json, "r") as f:
-                    settings = json.load(f)
-                log.info("Loaded user settings from %s", user_json)
-            except Exception as e:
-                log.warning("Failed to read user JSON settings: %s", e)
-
-        # 2. If no user JSON found, fall back to bash config files
+        # 2. If no user config resolved, fall back to system bash config files
         if not settings:
             for path in SYSTEM_CONFIG_FILES:
                 if os.path.exists(path):
@@ -444,7 +555,7 @@ if __name__ == "__main__":
         if settings:
             ok, msg = apply_settings(settings, save=False)
             if ok:
-                print("Successfully applied saved CPU power settings at boot.")
+                print("Successfully applied saved CPU power settings.")
                 sys.exit(0)
             else:
                 print(f"Failed to apply settings: {msg}", file=sys.stderr)
@@ -477,6 +588,19 @@ if __name__ == "__main__":
             
     # Handle system config wipe (called by factory reset via pkexec)
     elif len(sys.argv) > 1 and sys.argv[1] == "--wipe-system-config":
+        # 1. Disable the cpupower systemd service first if enabled
+        try:
+            res_chk = subprocess.run(
+                ["systemctl", "is-enabled", "cpupower.service"],
+                capture_output=True, text=True
+            )
+            if res_chk.stdout.strip() == "enabled":
+                subprocess.run(["systemctl", "disable", "--now", "cpupower.service"], capture_output=True)
+                print("[cpupower-gtk] Disabled cpupower.service successfully.")
+        except Exception as e:
+            print(f"WARNING: Failed to disable cpupower.service: {e}", file=sys.stderr)
+
+        # 2. Wipe config files
         wiped = []
         for path in SYSTEM_CONFIG_FILES:
             if os.path.exists(path):

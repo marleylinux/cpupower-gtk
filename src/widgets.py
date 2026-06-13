@@ -34,9 +34,6 @@ def get_cpu_name() -> str:
     return _cpu_name_cache
 
 
-
-
-
 def _bar_class(fraction: float) -> str:
     """Determine progress bar coloring classes (from green to red)"""
     if fraction < 0.5:
@@ -178,7 +175,7 @@ def _build_monitor_card_with_bar(label: str, unit: str, icon_name: str, max_limi
             card._bar.remove_css_class("high")
             card._bar.add_css_class(_bar_class(frac))
         else:
-            card._val_lbl.set_text("—")
+            card._val_lbl.set_text("N/A")
             card._bar.set_fraction(0.0)
 
     card.update_val = update_val

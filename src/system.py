@@ -44,9 +44,6 @@ def is_on_ac_power() -> bool:
     return not has_mains
 
 
-
-
-
 def get_live_cpu_clocks() -> list[float]:
     """Get live frequencies of all CPU cores in MHz"""
     freqs = []

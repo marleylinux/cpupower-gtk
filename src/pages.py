@@ -1,7 +1,12 @@
 """UI page builders for cpupower-gtk"""
 import os
 import logging
-from gi.repository import Gtk, Adw
+from gi.repository import Gtk, Adw, Gdk
+try:
+    from main import APP_VER
+except ImportError:
+    APP_VER = "1.0.1"
+
 from widgets import (
     get_cpu_name,
     format_freq,
@@ -189,12 +194,12 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
     text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
     text_box.set_valign(Gtk.Align.CENTER)
 
-    title_lbl = Gtk.Label(label="CPU Performance Dashboard")
+    title_lbl = Gtk.Label(label="CPU Dashboard")
     title_lbl.add_css_class("hero-title")
     title_lbl.set_halign(Gtk.Align.START)
     text_box.append(title_lbl)
 
-    subtitle_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+    subtitle_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
     subtitle_lbl = Gtk.Label(label="Active monitoring for")
     subtitle_lbl.add_css_class("hero-subtitle")
     subtitle_box.append(subtitle_lbl)
@@ -220,7 +225,8 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
 
     app.card_driver = _build_monitor_card("Scaling Driver", "", "cpu-symbolic", caps.get("scaling_driver", "—"), "System", "tag-system")
     app.card_gov = _build_monitor_card("Active Governor", "", "system-run-symbolic", caps.get("current_governor", "—"), "System", "tag-system")
-    app.card_boost = _build_monitor_card("Core Boost", "", "media-flash-symbolic", "Active" if caps.get("boost_active") else "Inactive", "Performance", "tag-performance")
+    boost_initial = "Active" if caps.get("boost_active") else ("Inactive" if caps.get("boost_supported") else "Unsupported")
+    app.card_boost = _build_monitor_card("Core Boost", "", "media-flash-symbolic", boost_initial, "Performance", "tag-performance")
 
     if caps.get("epp_available"):
         app.card_epp = _build_monitor_card("Energy Preference (EPP)", "", "battery-symbolic", caps.get("current_epp", "—"), "Energy", "tag-energy")
@@ -456,7 +462,7 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
 
 def _build_settings_page(app) -> Gtk.ScrolledWindow:
     """Build the core frequency controller and settings tuner page"""
-    scrolled, main_box = _make_page_scaffold("settings", "Frequency Settings")
+    scrolled, main_box = _make_page_scaffold("settings", "Settings")
 
     caps = app.cpu_caps
 
@@ -546,6 +552,35 @@ def _build_settings_page(app) -> Gtk.ScrolledWindow:
         app.settings_boost_row = None
 
     main_box.append(grp_tune)
+
+    # About Section
+    main_box.append(_build_section_header("About", "help-about-symbolic"))
+    
+    group_about = Adw.PreferencesGroup()
+    group_about.set_title("Application Details")
+    
+    row_version = Adw.ActionRow()
+    row_version.set_title("Version")
+    row_version.set_subtitle(APP_VER)
+    group_about.add(row_version)
+    
+    row_author = Adw.ActionRow()
+    row_author.set_title("Developer")
+    row_author.set_subtitle("Marley (marleylinux)")
+    group_about.add(row_author)
+    
+    row_repo = Adw.ActionRow()
+    row_repo.set_title("Repository")
+    row_repo.set_subtitle("https://github.com/marleylinux/cpupower-gtk")
+    
+    btn_link = Gtk.Button(icon_name="document-open-symbolic")
+    btn_link.set_tooltip_text("Open GitHub Repo")
+    btn_link.set_valign(Gtk.Align.CENTER)
+    btn_link.connect("clicked", lambda b: Gtk.show_uri(app.win, "https://github.com/marleylinux/cpupower-gtk", Gdk.CURRENT_TIME))
+    row_repo.add_suffix(btn_link)
+    group_about.add(row_repo)
+    
+    main_box.append(group_about)
 
     return scrolled
 
@@ -861,22 +896,16 @@ def _build_freq_slider_row(app, title, desc, param_key, lo, hi, current_live_val
             app._update_conflicts()
 
     def on_clear_clicked(_b):
-        # Resetting one resets all 3
-        freq_keys = ["min_freq", "max_freq", "fixed_freq"]
-        for key in freq_keys:
-            app.pending_settings.pop(key, None)
+        app.pending_settings.pop(param_key, None)
 
-        for key in freq_keys:
-            row_widget = getattr(app, f"settings_{key.replace('_freq', '')}_row", None)
-            if row_widget:
-                row_widget._updating_programmatically = True
-                live_val = getattr(row_widget, "_current_live_val", 0.0)
-                if live_val > 0.0:
-                    row_widget._slider.set_value(live_val)
-                else:
-                    row_widget._slider.set_value(row_widget._slider.get_adjustment().get_lower())
-                row_widget._updating_programmatically = False
-                row_widget._update_val_label(row_widget._slider, False)
+        row._updating_programmatically = True
+        live_val = getattr(row, "_current_live_val", 0.0)
+        if live_val > 0.0:
+            row._slider.set_value(live_val)
+        else:
+            row._slider.set_value(row._slider.get_adjustment().get_lower())
+        row._updating_programmatically = False
+        row._update_val_label(row._slider, False)
 
         if hasattr(app, "_update_conflicts"):
             app._update_conflicts()

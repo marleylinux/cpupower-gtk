@@ -61,6 +61,13 @@ mkdir -p /usr/lib/systemd/system/cpupower.service.d
 cp cpupower-gtk.conf /usr/lib/systemd/system/cpupower.service.d/cpupower-gtk.conf
 chmod 644 /usr/lib/systemd/system/cpupower.service.d/cpupower-gtk.conf
 
+# systemd sleep hook
+echo "  -> Installing systemd sleep hook..."
+mkdir -p /usr/lib/systemd/system-sleep
+cp cpupower-gtk-sleep /usr/lib/systemd/system-sleep/cpupower-gtk
+chmod 755 /usr/lib/systemd/system-sleep/cpupower-gtk
+
+
 # Install polkit policy
 echo "  -> Installing Polkit policy..."
 mkdir -p /usr/share/polkit-1/actions

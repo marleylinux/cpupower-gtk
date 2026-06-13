@@ -23,6 +23,11 @@ echo "  -> Removing systemd service override..."
 rm -f /usr/lib/systemd/system/cpupower.service.d/cpupower-gtk.conf
 rmdir /usr/lib/systemd/system/cpupower.service.d 2>/dev/null || true
 
+# remove systemd sleep hook
+echo "  -> Removing systemd sleep hook..."
+rm -f /usr/lib/systemd/system-sleep/cpupower-gtk
+
+
 # clean up legacy service if present
 if [ -f /usr/lib/systemd/system/cpupower-gtk-apply.service ]; then
     echo "  -> Removing legacy systemd service..."

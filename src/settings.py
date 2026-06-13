@@ -70,10 +70,6 @@ def factory_reset() -> tuple[bool, str]:
     """Delete all user configurations, profiles and system boot config"""
     errors = []
 
-    # Disable the boot service first
-    if is_service_enabled():
-        set_service_enabled(False)
-
     # Wipe user-space config files
     for path in [CONFIG_FILE, PROFILES_FILE]:
         if os.path.exists(path):

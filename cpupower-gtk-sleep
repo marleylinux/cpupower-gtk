@@ -1,0 +1,7 @@
+#!/bin/sh
+# cpupower-gtk systemd-sleep hook
+# Restores CPU power settings dynamically upon wake-up from sleep
+
+if [ "$1" = "post" ]; then
+    /usr/bin/python3 /usr/share/cpupower-gtk/backend.py --apply-saved
+fi
