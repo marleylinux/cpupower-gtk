@@ -12,7 +12,7 @@ source=("$pkgname-$pkgver-$pkgrel.tar.gz::https://github.com/marleylinux/cpupowe
 sha256sums=('a8b6c5227fcc90915627c90849e7226cd94703f6bfc9df4acd80babb49a438b6')
 
 package() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/$pkgname-$pkgver-$pkgrel"
 
   # copy python files
   install -d "$pkgdir/usr/share/cpupower-gtk"
