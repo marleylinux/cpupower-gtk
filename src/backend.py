@@ -8,6 +8,7 @@ import logging
 import shutil
 import glob
 import subprocess
+import time
 from settings import SYSTEM_CONFIG_FILES
 
 log = logging.getLogger(__name__)
@@ -118,8 +119,25 @@ def _direct_write(pattern: str, data: str) -> bool:
                         "feature may be unsupported on this hardware.", pattern)
             return False
         for path in paths:
-            with open(path, "w") as f:
-                f.write(data)
+            success = False
+            last_err = None
+            for _ in range(5):
+                try:
+                    with open(path, "w") as f:
+                        f.write(data)
+                    success = True
+                    break
+                except OSError as e:
+                    last_err = e
+                    if getattr(e, 'errno', None) == 16:  # EBUSY
+                        time.sleep(0.1)
+                        continue
+                    break
+                except Exception as e:
+                    last_err = e
+                    break
+            if not success:
+                raise last_err or Exception("Unknown write error")
         return True
     except Exception as e:
         log.error("Direct write failed for %s: %s", pattern, e)
@@ -132,8 +150,25 @@ def _write_single(path: str, data: str) -> bool:
     Use this instead of _direct_write when the path is a concrete file, not a pattern.
     """
     try:
-        with open(path, "w") as f:
-            f.write(data)
+        success = False
+        last_err = None
+        for _ in range(5):
+            try:
+                with open(path, "w") as f:
+                    f.write(data)
+                success = True
+                break
+            except OSError as e:
+                last_err = e
+                if getattr(e, 'errno', None) == 16:  # EBUSY
+                    time.sleep(0.1)
+                    continue
+                break
+            except Exception as e:
+                last_err = e
+                break
+        if not success:
+            raise last_err or Exception("Unknown write error")
         return True
     except Exception as e:
         log.error("Direct write failed for %s: %s", path, e)
