@@ -56,12 +56,22 @@ def get_cpu_capabilities() -> dict:
         caps["current_governor"] = read_sysfs(f"{policy0}/scaling_governor")
 
         # EPP (Energy Performance Preference)
-        epp_avail_path = f"{policy0}/energy_performance_available_preferences"
-        if os.path.exists(epp_avail_path):
+        epp_path = f"{policy0}/energy_performance_preference"
+        if os.path.exists(epp_path):
             caps["epp_available"] = True
-            epps = read_sysfs(epp_avail_path)
-            caps["epp_preferences"] = epps.split() if epps else []
-            caps["current_epp"] = read_sysfs(f"{policy0}/energy_performance_preference")
+            epp_avail_path = f"{policy0}/energy_performance_available_preferences"
+            epps_list = []
+            if os.path.exists(epp_avail_path):
+                epps = read_sysfs(epp_avail_path)
+                epps_list = epps.split() if epps else []
+            
+            standard_epps = ["default", "performance", "balance_performance", "balance_power", "power"]
+            for item in standard_epps:
+                if item not in epps_list:
+                    epps_list.append(item)
+            
+            caps["epp_preferences"] = epps_list
+            caps["current_epp"] = read_sysfs(epp_path)
 
         # Frequencies (convert kHz to MHz)
         def read_freq(name: str) -> float:
