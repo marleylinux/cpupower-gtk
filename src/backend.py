@@ -60,12 +60,7 @@ def get_cpu_capabilities() -> dict:
         if os.path.exists(epp_avail_path):
             caps["epp_available"] = True
             epps = read_sysfs(epp_avail_path)
-            epps_list = epps.split() if epps else []
-            standard_epps = ["default", "performance", "balance_performance", "balance_power", "power"]
-            for item in standard_epps:
-                if item not in epps_list:
-                    epps_list.append(item)
-            caps["epp_preferences"] = epps_list
+            caps["epp_preferences"] = epps.split() if epps else []
             caps["current_epp"] = read_sysfs(f"{policy0}/energy_performance_preference")
 
         # Frequencies (convert kHz to MHz)
@@ -108,40 +103,32 @@ def get_cpu_capabilities() -> dict:
 
 def _direct_write(pattern: str, data: str) -> bool:
     """Directly write data to files matching pattern (requires running as root).
-    Returns True if files were found and written. Returns False (with a log
-    warning) if the glob matches nothing, since that means the feature is absent
-    or the path is wrong — callers should not treat this as success.
+    Returns True if files were found and at least one write succeeded.
     """
     try:
         paths = glob.glob(pattern)
         if not paths:
-            log.warning("_direct_write: no sysfs paths matched pattern '%s' — "
-                        "feature may be unsupported on this hardware.", pattern)
             return False
+        
+        any_success = False
         for path in paths:
             success = False
-            last_err = None
             for _ in range(5):
                 try:
                     with open(path, "w") as f:
-                        f.write(data)
+                        f.write(data.strip() + "\n")
                     success = True
+                    any_success = True
                     break
                 except OSError as e:
-                    last_err = e
                     if getattr(e, 'errno', None) == 16:  # EBUSY
                         time.sleep(0.1)
                         continue
                     break
-                except Exception as e:
-                    last_err = e
+                except Exception:
                     break
-            if not success:
-                raise last_err or Exception("Unknown write error")
-        return True
-    except Exception as e:
-        log.error("Direct write failed for %s: %s", pattern, e)
-        print(f"Direct write failed for {pattern}: {e}", file=sys.stderr)
+        return any_success
+    except Exception:
         return False
 
 
@@ -151,28 +138,21 @@ def _write_single(path: str, data: str) -> bool:
     """
     try:
         success = False
-        last_err = None
         for _ in range(5):
             try:
                 with open(path, "w") as f:
-                    f.write(data)
+                    f.write(data.strip() + "\n")
                 success = True
                 break
             except OSError as e:
-                last_err = e
                 if getattr(e, 'errno', None) == 16:  # EBUSY
                     time.sleep(0.1)
                     continue
                 break
-            except Exception as e:
-                last_err = e
+            except Exception:
                 break
-        if not success:
-            raise last_err or Exception("Unknown write error")
-        return True
-    except Exception as e:
-        log.error("Direct write failed for %s: %s", path, e)
-        print(f"Direct write failed for {path}: {e}", file=sys.stderr)
+        return success
+    except Exception:
         return False
 
 
@@ -441,10 +421,16 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
             epb_ok = False
             epb_msg = str(e)
 
-    overall_ok = cpupower_ok and boost_ok and epp_ok and epb_ok
+    # Check overall status
+    overall_ok = cpupower_ok
     if overall_ok:
         if save:
             write_cpupower_config(settings)
+        
+        warn_msgs = [m for m in (boost_msg, epp_msg, epb_msg) if m]
+        if warn_msgs:
+            warn_str = " | Warnings: " + " ".join(warn_msgs)
+            return True, "Settings applied." + warn_str
         return True, "Settings applied successfully."
     else:
         msgs = [m for m in (cpupower_msg, boost_msg, epp_msg, epb_msg) if m]

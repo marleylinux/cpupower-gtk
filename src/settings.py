@@ -44,7 +44,7 @@ def is_service_enabled() -> bool:
             ["systemctl", "is-enabled", "cpupower.service"],
             capture_output=True, text=True
         )
-        return res.stdout.strip() == "enabled"
+        return "enabled" in res.stdout.strip()
     except Exception:
         return False
 
@@ -54,8 +54,8 @@ def set_service_enabled(enabled: bool) -> tuple[bool, str]:
     action = "enable" if enabled else "disable"
     cmd = ["systemctl", action, "--now", "cpupower.service"]
     try:
-        # Prompt for password via graphical pkexec for systemctl
-        res = subprocess.run(["pkexec"] + cmd, capture_output=True, text=True, timeout=15)
+        # systemctl natively invokes polkit if run as a standard user
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if res.returncode == 0:
             status = "enabled and started" if enabled else "disabled and stopped"
             return True, f"Official cpupower.service {status} successfully."
@@ -88,7 +88,7 @@ def factory_reset() -> tuple[bool, str]:
             )
         res = subprocess.run(
             ["pkexec", backend_path, "--wipe-system-config"],
-            capture_output=True, text=True, timeout=15
+            capture_output=True, text=True, timeout=60
         )
         if res.returncode != 0:
             err = (res.stderr or res.stdout or "").strip()
