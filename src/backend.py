@@ -310,6 +310,34 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
             if res.returncode != 0:
                 cpupower_ok = False
                 cpupower_msg = (res.stderr or res.stdout or "cpupower frequency-set failed").strip()
+                
+                # Fallback to direct sysfs writes (fixes EBUSY race condition on shared policies)
+                log.info("cpupower frequency-set failed. Falling back to direct sysfs writes.")
+                fallback_ok = True
+                policy_dir = "/sys/devices/system/cpu/cpufreq/policy*"
+                
+                if use_fixed and fixed_freq is not None:
+                    if not _direct_write(f"{policy_dir}/scaling_setspeed", str(int(fixed_freq_val * 1000))):
+                        fallback_ok = False
+                else:
+                    # Write max first to avoid EINVAL if new min > current max
+                    if max_freq_val > 0.0:
+                        _direct_write(f"{policy_dir}/scaling_max_freq", str(int(max_freq_val * 1000)))
+                    if min_freq_val > 0.0:
+                        if not _direct_write(f"{policy_dir}/scaling_min_freq", str(int(min_freq_val * 1000))):
+                            fallback_ok = False
+                    if max_freq_val > 0.0:
+                        if not _direct_write(f"{policy_dir}/scaling_max_freq", str(int(max_freq_val * 1000))):
+                            fallback_ok = False
+                            
+                    governor = settings.get("governor")
+                    if governor and governor in caps["governors"]:
+                        if not _direct_write(f"{policy_dir}/scaling_governor", governor):
+                            fallback_ok = False
+                            
+                if fallback_ok:
+                    cpupower_ok = True
+                    cpupower_msg = ""
         except Exception as e:
             cpupower_ok = False
             cpupower_msg = str(e)
@@ -350,10 +378,10 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
             if res.returncode != 0:
-                epp_pattern = "/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference"
-                if not _direct_write(epp_pattern, epp):
-                    epp_policy_pattern = "/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference"
-                    if not _direct_write(epp_policy_pattern, epp):
+                epp_policy_pattern = "/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference"
+                if not _direct_write(epp_policy_pattern, epp):
+                    epp_pattern = "/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference"
+                    if not _direct_write(epp_pattern, epp):
                         epp_ok = False
                         epp_msg = "Failed to write energy_performance_preference via sysfs."
         except Exception as e:
