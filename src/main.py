@@ -20,7 +20,8 @@ log = logging.getLogger(__name__)
 
 APP_ID = "com.marley.cpupower-gtk"
 APP_NAME = "cpupower-gtk"
-APP_VER = "1.0.3"
+APP_VER = "1.0.4"
+
 
 
 def get_backend_path() -> str:

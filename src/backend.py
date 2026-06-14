@@ -86,16 +86,37 @@ def get_cpu_capabilities() -> dict:
         caps["current_governor"] = read_sysfs(f"{policy0}/scaling_governor")
 
         # ── EPP (Energy Performance Preference) ───────────────────────────
-        # Only expose EPP when the kernel sysfs file exists AND the
-        # available-preferences file lists at least one option.
+        # Only expose EPP when the kernel sysfs file exists.
+        # We determine the available preferences depending on AMD/Intel vendor instructions
+        # to ensure that if the current governor is 'performance' (which locks EPP to
+        # 'performance'), the UI/backend still allows choosing other EPP options for
+        # configuring profiles/presets that use other governors (like 'powersave').
         epp_path = f"{policy0}/energy_performance_preference"
         epp_avail_path = f"{policy0}/energy_performance_available_preferences"
         if os.path.exists(epp_path) and os.path.exists(epp_avail_path):
             raw = read_sysfs(epp_avail_path)
             epps_list = raw.split() if raw else []
-            if epps_list:
+            if epps_list or os.path.exists(epp_path):
                 caps["epp_available"] = True
-                caps["epp_preferences"] = epps_list
+                
+                # Determine standard preferences depending on AMD/Intel vendor instructions
+                if caps["cpu_vendor"] == "amd":
+                    standard_preferences = ["performance", "balance_performance", "balance_power", "power"]
+                elif caps["cpu_vendor"] == "intel":
+                    standard_preferences = ["default", "performance", "balance_performance", "balance_power", "power"]
+                else:
+                    standard_preferences = ["default", "performance", "balance_performance", "balance_power", "power"]
+                
+                # Merge lists, preserving the order of standard_preferences first, then appending any other options
+                merged = []
+                for p in standard_preferences:
+                    if p not in merged:
+                        merged.append(p)
+                for p in epps_list:
+                    if p not in merged:
+                        merged.append(p)
+                
+                caps["epp_preferences"] = merged
                 caps["current_epp"] = read_sysfs(epp_path)
 
         # ── Frequencies (convert kHz → MHz) ──────────────────────────────
@@ -438,41 +459,47 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
     epp_msg = ""
     epp = settings.get("epp")
     if epp and caps["epp_available"]:
-        # Validate against available values (guards against stale settings)
-        available = caps.get("epp_preferences", [])
-        if available and epp not in available:
-            epp_ok = False
-            epp_msg = (
-                f"EPP value '{epp}' is not supported on this system. "
-                f"Available: {', '.join(available)}"
-            )
-            log.warning("EPP write skipped: %s", epp_msg)
+        # If the governor is performance (which locks EPP to performance),
+        # skip applying any non-performance EPP values to prevent kernel EINVAL/EBUSY errors.
+        gov_to_apply = settings.get("governor") or caps.get("current_governor", "")
+        if gov_to_apply == "performance" and epp != "performance":
+            log.info("EPP '%s' write skipped because governor is set to performance (which locks EPP to performance)", epp)
         else:
-            # Primary: direct sysfs write (works on all kernels including those
-            # where cpupower set -e is not implemented for amd-pstate-epp)
-            epp_policy_pattern = "/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference"
-            wrote_sysfs = _direct_write(epp_policy_pattern, epp)
-            if not wrote_sysfs:
-                # Secondary fallback: per-cpu path
-                epp_cpu_pattern = "/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference"
-                wrote_sysfs = _direct_write(epp_cpu_pattern, epp)
+            # Validate against available values (guards against stale settings)
+            available = caps.get("epp_preferences", [])
+            if available and epp not in available:
+                epp_ok = False
+                epp_msg = (
+                    f"EPP value '{epp}' is not supported on this system. "
+                    f"Available: {', '.join(available)}"
+                )
+                log.warning("EPP write skipped: %s", epp_msg)
+            else:
+                # Primary: direct sysfs write (works on all kernels including those
+                # where cpupower set -e is not implemented for amd-pstate-epp)
+                epp_policy_pattern = "/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference"
+                wrote_sysfs = _direct_write(epp_policy_pattern, epp)
+                if not wrote_sysfs:
+                    # Secondary fallback: per-cpu path
+                    epp_cpu_pattern = "/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference"
+                    wrote_sysfs = _direct_write(epp_cpu_pattern, epp)
 
-            if not wrote_sysfs:
-                # Last resort: cpupower set -e
-                try:
-                    res = subprocess.run(
-                        ["cpupower", "set", "-e", epp],
-                        capture_output=True, text=True, timeout=5,
-                    )
-                    if res.returncode != 0:
-                        epp_ok = False
-                        epp_msg = (
-                            f"Failed to set EPP '{epp}' via sysfs or cpupower. "
-                            + (res.stderr or res.stdout or "").strip()
+                if not wrote_sysfs:
+                    # Last resort: cpupower set -e
+                    try:
+                        res = subprocess.run(
+                            ["cpupower", "set", "-e", epp],
+                            capture_output=True, text=True, timeout=5,
                         )
-                except Exception as e:
-                    epp_ok = False
-                    epp_msg = str(e)
+                        if res.returncode != 0:
+                            epp_ok = False
+                            epp_msg = (
+                                f"Failed to set EPP '{epp}' via sysfs or cpupower. "
+                                + (res.stderr or res.stdout or "").strip()
+                            )
+                    except Exception as e:
+                        epp_ok = False
+                        epp_msg = str(e)
 
     # 4. Apply EPB
     epb_ok = True

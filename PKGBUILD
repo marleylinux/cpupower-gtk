@@ -1,7 +1,8 @@
 # Maintainer: Marley <warburtonmarley@proton.me>
 pkgname=cpupower-gtk
-pkgver=1.0.3
+pkgver=1.0.4
 pkgrel=1
+
 pkgdesc="A modern, polished GTK4/Libadwaita graphical interface for cpupower CPU power management."
 arch=('any')
 url="https://github.com/marleylinux/cpupower-gtk"
