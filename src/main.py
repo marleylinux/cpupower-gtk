@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 APP_ID = "com.marley.cpupower-gtk"
 APP_NAME = "cpupower-gtk"
-APP_VER = "1.0.1"
+APP_VER = "1.0.3"
 
 
 def get_backend_path() -> str:
@@ -408,12 +408,23 @@ class CpupowerApp(Adw.Application):
         if govs and gov in govs:
             self.settings_gov_row.set_selected(govs.index(gov))
 
-        # EPP
+        # EPP — only select if the saved value is actually available on this system.
+        # Stale values from a previous session or different governor are silently
+        # discarded so the UI always reflects a valid hardware state.
         if self.settings_epp_row and caps.get("epp_available"):
-            epp = pending.get("epp", caps.get("current_epp", ""))
             epps = caps.get("epp_preferences", [])
-            if epps and epp in epps:
+            epp = pending.get("epp", caps.get("current_epp", ""))
+            if not epps:
+                pass  # nothing to select
+            elif epp in epps:
                 self.settings_epp_row.set_selected(epps.index(epp))
+            else:
+                # Fall back to current live EPP if pending value is invalid
+                live_epp = caps.get("current_epp", "")
+                if live_epp in epps:
+                    self.settings_epp_row.set_selected(epps.index(live_epp))
+                else:
+                    self.settings_epp_row.set_selected(0)
 
         # EPB
         if self.settings_epb_scale and caps.get("epb_available"):
@@ -501,12 +512,15 @@ class CpupowerApp(Adw.Application):
         if govs and idx < len(govs):
             settings["governor"] = govs[idx]
 
-        # EPP
+        # EPP — only write if the selected value is in the real sysfs list
         if self.settings_epp_row:
             epps = caps.get("epp_preferences", [])
             epp_idx = self.settings_epp_row.get_selected()
             if epps and epp_idx < len(epps):
-                settings["epp"] = epps[epp_idx]
+                selected_epp = epps[epp_idx]
+                # Final guard: do not save a value that sysfs won't accept
+                if selected_epp in epps:
+                    settings["epp"] = selected_epp
 
         # EPB
         if self.settings_epb_scale:

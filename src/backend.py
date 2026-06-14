@@ -20,7 +20,13 @@ def is_cpupower_installed() -> bool:
 
 
 def get_cpu_capabilities() -> dict:
-    """Read CPU scaling capabilities and limits from sysfs"""
+    """Read CPU scaling capabilities and limits from sysfs.
+
+    EPP (Energy Performance Preference) values are read ONLY from the
+    kernel's own energy_performance_available_preferences file.  We never
+    inject extra synthetic values: writing a preference that the kernel
+    does not list will always fail with EINVAL.
+    """
     caps = {
         "scaling_driver": "Unknown",
         "governors": [],
@@ -36,6 +42,8 @@ def get_cpu_capabilities() -> dict:
         "scaling_max": 0.0,
         "boost_supported": False,
         "boost_active": False,
+        # Detected vendor string ("amd" | "intel" | "")
+        "cpu_vendor": "",
     }
 
     def read_sysfs(path: str) -> str:
@@ -47,33 +55,50 @@ def get_cpu_capabilities() -> dict:
                 pass
         return ""
 
+    # ── Detect CPU vendor from /proc/cpuinfo ──────────────────────────────
+    try:
+        with open("/proc/cpuinfo", "r") as f:
+            for line in f:
+                if line.lower().startswith("vendor_id"):
+                    vid = line.split(":", 1)[1].strip().lower()
+                    if "amd" in vid:
+                        caps["cpu_vendor"] = "amd"
+                    elif "intel" in vid or "genuineintel" in vid:
+                        caps["cpu_vendor"] = "intel"
+                    break
+    except Exception:
+        pass
+
+    # ── Fallback vendor detection from scaling driver name ─────────────────
     policy0 = "/sys/devices/system/cpu/cpufreq/policy0"
     if os.path.exists(policy0):
-        caps["scaling_driver"] = read_sysfs(f"{policy0}/scaling_driver") or "Unknown"
-        
+        driver = read_sysfs(f"{policy0}/scaling_driver")
+        caps["scaling_driver"] = driver or "Unknown"
+        if not caps["cpu_vendor"]:
+            d = driver.lower()
+            if "amd" in d:
+                caps["cpu_vendor"] = "amd"
+            elif "intel" in d:
+                caps["cpu_vendor"] = "intel"
+
         govs = read_sysfs(f"{policy0}/scaling_available_governors")
         caps["governors"] = govs.split() if govs else []
         caps["current_governor"] = read_sysfs(f"{policy0}/scaling_governor")
 
-        # EPP (Energy Performance Preference)
+        # ── EPP (Energy Performance Preference) ───────────────────────────
+        # Only expose EPP when the kernel sysfs file exists AND the
+        # available-preferences file lists at least one option.
         epp_path = f"{policy0}/energy_performance_preference"
-        if os.path.exists(epp_path):
-            caps["epp_available"] = True
-            epp_avail_path = f"{policy0}/energy_performance_available_preferences"
-            epps_list = []
-            if os.path.exists(epp_avail_path):
-                epps = read_sysfs(epp_avail_path)
-                epps_list = epps.split() if epps else []
-            
-            standard_epps = ["default", "performance", "balance_performance", "balance_power", "power"]
-            for item in standard_epps:
-                if item not in epps_list:
-                    epps_list.append(item)
-            
-            caps["epp_preferences"] = epps_list
-            caps["current_epp"] = read_sysfs(epp_path)
+        epp_avail_path = f"{policy0}/energy_performance_available_preferences"
+        if os.path.exists(epp_path) and os.path.exists(epp_avail_path):
+            raw = read_sysfs(epp_avail_path)
+            epps_list = raw.split() if raw else []
+            if epps_list:
+                caps["epp_available"] = True
+                caps["epp_preferences"] = epps_list
+                caps["current_epp"] = read_sysfs(epp_path)
 
-        # Frequencies (convert kHz to MHz)
+        # ── Frequencies (convert kHz → MHz) ──────────────────────────────
         def read_freq(name: str) -> float:
             val = read_sysfs(f"{policy0}/{name}")
             try:
@@ -86,7 +111,7 @@ def get_cpu_capabilities() -> dict:
         caps["scaling_min"] = read_freq("scaling_min_freq")
         caps["scaling_max"] = read_freq("scaling_max_freq")
 
-    # EPB (Intel Energy Performance Bias)
+    # ── EPB (Intel Energy Performance Bias — Intel-only sysfs node) ────────
     epb_path = "/sys/devices/system/cpu/cpu0/power/energy_perf_bias"
     if os.path.exists(epb_path):
         caps["epb_available"] = True
@@ -97,7 +122,7 @@ def get_cpu_capabilities() -> dict:
         except Exception:
             pass
 
-    # Boost (AMD/Intel cpufreq boost)
+    # ── Boost (AMD cpufreq boost or Intel no_turbo) ────────────────────────
     boost_path = "/sys/devices/system/cpu/cpufreq/boost"
     if os.path.exists(boost_path):
         caps["boost_supported"] = True
@@ -231,36 +256,45 @@ def parse_cpupower_config(path: str) -> dict:
 
 
 def write_cpupower_config(settings: dict) -> None:
-    """Write configuration settings to the official system files in bash script format"""
+    """Write configuration settings to the official cpupower.service config files.
+
+    The generated file follows the same bash variable format as the upstream
+    cpupower-service.conf / /etc/default/cpupower so the official
+    cpupower.service systemd unit can read it directly at boot.
+    """
     lines = [
-        "# SPDX-License-Identifier: GPL-2.0-or-later",
         "# Configuration file for cpupower.service",
         "# Generated automatically by cpupower-gtk",
-        ""
+        "# Do not edit by hand — use cpupower-gtk to make changes.",
+        "",
     ]
-    
+
     gov = settings.get("governor")
     if gov:
         lines.append(f"GOVERNOR='{gov}'")
-        
+
     use_fixed = settings.get("use_fixed_freq", False)
     fixed_freq = settings.get("fixed_freq")
-    
+
     if use_fixed and fixed_freq is not None:
         lines.append(f"FREQ='{int(fixed_freq * 1000)}kHz'")
     else:
         min_freq = settings.get("min_freq")
         if min_freq is not None:
             lines.append(f"MIN_FREQ='{int(min_freq * 1000)}kHz'")
-            
+
         max_freq = settings.get("max_freq")
         if max_freq is not None:
             lines.append(f"MAX_FREQ='{int(max_freq * 1000)}kHz'")
-        
+
+    # EPP — Energy Performance Preference (AMD amd-pstate-epp / Intel HWP)
+    # The value must come from energy_performance_available_preferences; we
+    # only write it if the caller provided one (i.e. epp_available was True).
     epp = settings.get("epp")
     if epp:
         lines.append(f"EPP='{epp}'")
-        
+
+    # PERF_BIAS — Intel-only energy/performance bias register (0-15)
     epb = settings.get("epb")
     if epb is not None:
         lines.append(f"PERF_BIAS='{int(epb)}'")
@@ -268,9 +302,9 @@ def write_cpupower_config(settings: dict) -> None:
     boost = settings.get("boost")
     if boost is not None:
         lines.append(f"BOOST='{1 if boost else 0}'")
-        
+
     content = "\n".join(lines) + "\n"
-    
+
     for path in SYSTEM_CONFIG_FILES:
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -394,24 +428,51 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
             boost_ok = False
             boost_msg = str(e)
 
-    # 3. Apply EPP
+    # 3. Apply EPP (Energy Performance Preference)
+    # Strategy:
+    #   a. Write directly to all policy sysfs nodes (fastest and most reliable).
+    #   b. If sysfs write fails, try cpupower set -e as a fallback.
+    # The value MUST be present in epp_preferences (from sysfs) — the kernel
+    # rejects unknown strings with EINVAL. We validate before touching hardware.
     epp_ok = True
     epp_msg = ""
     epp = settings.get("epp")
     if epp and caps["epp_available"]:
-        cmd = ["cpupower", "set", "-e", epp]
-        try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            if res.returncode != 0:
-                epp_policy_pattern = "/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference"
-                if not _direct_write(epp_policy_pattern, epp):
-                    epp_pattern = "/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference"
-                    if not _direct_write(epp_pattern, epp):
-                        epp_ok = False
-                        epp_msg = "Failed to write energy_performance_preference via sysfs."
-        except Exception as e:
+        # Validate against available values (guards against stale settings)
+        available = caps.get("epp_preferences", [])
+        if available and epp not in available:
             epp_ok = False
-            epp_msg = str(e)
+            epp_msg = (
+                f"EPP value '{epp}' is not supported on this system. "
+                f"Available: {', '.join(available)}"
+            )
+            log.warning("EPP write skipped: %s", epp_msg)
+        else:
+            # Primary: direct sysfs write (works on all kernels including those
+            # where cpupower set -e is not implemented for amd-pstate-epp)
+            epp_policy_pattern = "/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference"
+            wrote_sysfs = _direct_write(epp_policy_pattern, epp)
+            if not wrote_sysfs:
+                # Secondary fallback: per-cpu path
+                epp_cpu_pattern = "/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference"
+                wrote_sysfs = _direct_write(epp_cpu_pattern, epp)
+
+            if not wrote_sysfs:
+                # Last resort: cpupower set -e
+                try:
+                    res = subprocess.run(
+                        ["cpupower", "set", "-e", epp],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if res.returncode != 0:
+                        epp_ok = False
+                        epp_msg = (
+                            f"Failed to set EPP '{epp}' via sysfs or cpupower. "
+                            + (res.stderr or res.stdout or "").strip()
+                        )
+                except Exception as e:
+                    epp_ok = False
+                    epp_msg = str(e)
 
     # 4. Apply EPB
     epb_ok = True

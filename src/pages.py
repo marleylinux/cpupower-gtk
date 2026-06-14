@@ -5,7 +5,7 @@ from gi.repository import Gtk, Adw, Gdk
 try:
     from main import APP_VER
 except ImportError:
-    APP_VER = "1.0.1"
+    APP_VER = "1.0.3"
 
 from widgets import (
     get_cpu_name,
@@ -491,23 +491,51 @@ def _build_settings_page(app) -> Gtk.ScrolledWindow:
     grp_tune.add(gov_row)
     app.settings_gov_row = gov_row
 
-    # EPP Dropdown Row (If available)
+    # EPP Dropdown Row (If EPP is available on this system)
     if caps.get("epp_available"):
+        epps = caps.get("epp_preferences", [])
+        scaling_driver = caps.get("scaling_driver", "").lower()
+        cpu_vendor = caps.get("cpu_vendor", "").lower()
+
+        # Determine the right label for this system
+        if "amd" in scaling_driver or cpu_vendor == "amd":
+            epp_title = "AMD Energy Performance Preference (EPP)"
+            epp_subtitle = (
+                "Hint sent to AMD P-State firmware controlling the "
+                "energy/performance balance for hardware-autonomous scaling"
+            )
+        else:
+            epp_title = "Intel Energy Performance Preference (HWP)"
+            epp_subtitle = (
+                "Hint sent to Intel HWP firmware controlling the "
+                "energy/performance balance for hardware-autonomous scaling"
+            )
+
         epp_row = Adw.ComboRow()
-        epp_row.set_title("Energy Performance Preference (EPP)")
-        epp_row.set_subtitle("Granular hint given to the CPU's CPPC firmware to balance energy and speed")
+        epp_row.set_title(epp_title)
+        epp_row.set_subtitle(epp_subtitle)
         epp_row.set_icon_name("battery-symbolic")
 
-        epps = caps.get("epp_preferences", [])
         model_epp = Gtk.StringList.new(epps)
         epp_row.set_model(model_epp)
 
         current_epp = app.pending_settings.get("epp", caps.get("current_epp", ""))
+        # Validate: if saved epp is not in actual sysfs list, fall back to current
+        if current_epp not in epps:
+            current_epp = caps.get("current_epp", "")
         try:
             idx = epps.index(current_epp)
             epp_row.set_selected(idx)
         except ValueError:
-            pass
+            epp_row.set_selected(0)
+
+        if len(epps) == 1:
+            # Inform user why the list is limited (e.g. performance governor locks EPP)
+            epp_row.set_subtitle(
+                epp_subtitle
+                + " — only one option available with the current governor/driver mode"
+            )
+
         grp_tune.add(epp_row)
         app.settings_epp_row = epp_row
     else:
