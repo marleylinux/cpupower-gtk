@@ -9,7 +9,7 @@ license=('GPL-3.0-only')
 install=cpupower-gtk.install
 depends=('python>=3.11' 'python-gobject' 'gtk4' 'libadwaita' 'cpupower')
 source=("$pkgname-$pkgver-$pkgrel.tar.gz::https://github.com/marleylinux/cpupower-gtk/archive/refs/tags/v${pkgver}-${pkgrel}.tar.gz")
-sha256sums=('148a8897648eebd4fa67883429a188049a66bdb997605540d8da272501e4f5a5')
+sha256sums=('c4764d3707ac2f6fa55cb16a0e7a8a57aa10b203f1389885f942376bbf647459')
 
 package() {
   cd "$srcdir/$pkgname-$pkgver-$pkgrel"
