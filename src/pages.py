@@ -5,7 +5,7 @@ from gi.repository import Gtk, Adw, Gdk
 try:
     from main import APP_VER
 except ImportError:
-    APP_VER = "1.0.5"
+    APP_VER = "1.0.6"
 
 
 from widgets import (
@@ -248,7 +248,12 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
         app.card_min_limit, app.card_max_limit
     ]
     _layout_grid_cards(state_grid, state_cards)
-    main_box.append(state_grid)
+    
+    # Wrap in PreferencesGroup with dashboard-group class for gold standard layout
+    grp_state = Adw.PreferencesGroup()
+    grp_state.add_css_class("dashboard-group")
+    grp_state.add(state_grid)
+    main_box.append(grp_state)
 
     main_box.append(_build_section_header("Live CPU Readings", "utilities-system-monitor-symbolic"))
     
@@ -264,16 +269,18 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
 
     live_cards = [app.card_avg_freq, app.card_avg_load, app.card_temp]
     _layout_grid_cards(live_grid, live_cards)
-    main_box.append(live_grid)
+    
+    # Wrap in PreferencesGroup with dashboard-group class
+    grp_live = Adw.PreferencesGroup()
+    grp_live.add_css_class("dashboard-group")
+    grp_live.add(live_grid)
+    main_box.append(grp_live)
 
     # 3. Vendor-specific telemetry (AMD CPPC or Intel P-State)
-    # Use the scaling driver reported by sysfs — far more reliable than parsing
-    # the display CPU name string.
     scaling_driver = caps.get("scaling_driver", "").lower()
     is_amd = "amd" in scaling_driver
     is_intel = "intel" in scaling_driver
 
-    # Fallback: if driver name is ambiguous (e.g. 'acpi-cpufreq'), check CPU name
     if not is_amd and not is_intel:
         cpu_name_upper = get_cpu_name().upper()
         is_amd = "AMD" in cpu_name_upper
@@ -294,7 +301,12 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
         card_cppc_min_freq = _build_monitor_card("Lowest Non-linear Speed", "", "thunderbolt-symbolic", cppc_data.get("lowest_nonlinear_freq", "—"), "AMD", "tag-amd")
 
         _layout_grid_cards(cppc_grid, [card_cppc_max, card_cppc_nom, card_cppc_min_freq])
-        main_box.append(cppc_grid)
+        
+        # Wrap in PreferencesGroup with dashboard-group class
+        grp_cppc = Adw.PreferencesGroup()
+        grp_cppc.add_css_class("dashboard-group")
+        grp_cppc.add(cppc_grid)
+        main_box.append(grp_cppc)
 
     intel_data = _read_intel_pstate_info()
     if is_intel:
@@ -313,7 +325,12 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
         card_max_perf = _build_monitor_card("Max Performance Limit", "", "go-up-symbolic", intel_data.get("max_perf_pct", "—"), "Intel", "tag-intel")
 
         _layout_grid_cards(intel_grid, [card_pstates, card_turbo, card_hwp_boost, card_min_perf, card_max_perf])
-        main_box.append(intel_grid)
+        
+        # Wrap in PreferencesGroup with dashboard-group class
+        grp_intel = Adw.PreferencesGroup()
+        grp_intel.add_css_class("dashboard-group")
+        grp_intel.add(intel_grid)
+        main_box.append(grp_intel)
 
     # 4. Core Frequencies Grid
     main_box.append(_build_section_header("CPU Core Load & Speeds", "cpu-symbolic"))
@@ -336,7 +353,140 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
 
     main_box.append(core_grid)
 
-    # 5. Power Automation Profile Switcher
+    return scrolled
+
+
+def _build_settings_page(app) -> Gtk.ScrolledWindow:
+    """Build the core frequency controller and settings tuner page"""
+    scrolled, main_box = _make_page_scaffold("settings", "Settings")
+
+    caps = app.cpu_caps
+
+    # 1. Main Tuning Parameters Section
+    main_box.append(_build_section_header("Tune CPU Governor & Limits", "preferences-system-symbolic"))
+
+    grp_tune = Adw.PreferencesGroup()
+    grp_tune.set_description("Configure CPU frequency ranges and energy-efficiency behaviors")
+
+    # Governor Dropdown Row
+    gov_row = Adw.ComboRow()
+    gov_row.set_title("CPU scaling governor")
+    gov_row.set_subtitle("Defines policy algorithm used to scale frequencies")
+    gov_row.set_icon_name("system-run-symbolic")
+
+    governors = caps.get("governors", [])
+    model_gov = Gtk.StringList.new(governors)
+    gov_row.set_model(model_gov)
+
+    current_gov = app.pending_settings.get("governor", caps.get("current_governor", ""))
+    try:
+        idx = governors.index(current_gov)
+        gov_row.set_selected(idx)
+    except ValueError:
+        pass
+    grp_tune.add(gov_row)
+    app.settings_gov_row = gov_row
+
+    # EPP Dropdown Row (If EPP is available on this system)
+    epps = caps.get("epp_preferences", [])
+    if not epps:
+        epps = ["balance_performance", "performance", "power", "balance_power"]
+    scaling_driver = caps.get("scaling_driver", "").lower()
+    cpu_vendor = caps.get("cpu_vendor", "").lower()
+
+    if "amd" in scaling_driver or cpu_vendor == "amd":
+        epp_title = "AMD Energy Performance Preference (EPP)"
+        epp_subtitle = (
+            "Hint sent to AMD P-State firmware controlling the "
+            "energy/performance balance for hardware-autonomous scaling"
+        )
+    else:
+        epp_title = "Intel Energy Performance Preference (HWP)"
+        epp_subtitle = (
+            "Hint sent to Intel HWP firmware controlling the "
+            "energy/performance balance for hardware-autonomous scaling"
+        )
+
+    epp_row = Adw.ComboRow()
+    epp_row.set_title(epp_title)
+    epp_row.set_subtitle(epp_subtitle)
+    epp_row.set_icon_name("battery-symbolic")
+
+    model_epp = Gtk.StringList.new(epps)
+    epp_row.set_model(model_epp)
+
+    if caps.get("epp_available"):
+        current_epp = app.pending_settings.get("epp", caps.get("current_epp", ""))
+        if current_epp not in epps:
+            current_epp = caps.get("current_epp", "")
+        try:
+            idx = epps.index(current_epp)
+            epp_row.set_selected(idx)
+        except ValueError:
+            epp_row.set_selected(0)
+
+        if len(epps) == 1:
+            epp_row.set_subtitle(
+                epp_subtitle
+                + " — only one option available with the current governor/driver mode"
+            )
+        app.settings_epp_row = epp_row
+    else:
+        epp_row.set_sensitive(False)
+        epp_row.set_subtitle(
+            epp_subtitle
+            + " <span color='#e01b24' weight='bold' size='small'>(Unsupported on this CPU)</span>"
+        )
+        app.settings_epp_row = None
+
+    grp_tune.add(epp_row)
+
+    # EPB Slider Row (If available)
+    if caps.get("epb_available"):
+        epb_action_row = Adw.ActionRow()
+        epb_action_row.set_title("Energy Performance Bias (EPB)")
+        epb_action_row.set_subtitle("Intel power register bias. Range: 0 (Max Perf) to 15 (Max Power Saving)")
+        epb_action_row.set_icon_name("battery-symbolic")
+
+        current_epb = app.pending_settings.get("epb", caps.get("current_epb", 6))
+        if current_epb is None:
+            current_epb = 6
+
+        epb_adj = Gtk.Adjustment(value=float(current_epb), lower=0.0, upper=15.0, step_increment=1.0, page_increment=3.0, page_size=0.0)
+        epb_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=epb_adj)
+        epb_scale.set_draw_value(True)
+        epb_scale.set_value_pos(Gtk.PositionType.RIGHT)
+        epb_scale.set_size_request(200, -1)
+        epb_scale.set_valign(Gtk.Align.CENTER)
+
+        epb_action_row.add_suffix(epb_scale)
+        app.settings_epb_scale = epb_scale
+        grp_tune.add(epb_action_row)
+    else:
+        app.settings_epb_scale = None
+
+    # Boost Switch Row
+    boost_row = Adw.SwitchRow()
+    boost_row.set_title("Core Performance Boost / Turbo Boost")
+    boost_row.set_subtitle("Allows cores to automatically speed up past standard stock limits if thermal budget allows")
+    boost_row.set_icon_name("media-flash-symbolic")
+
+    if caps.get("boost_supported"):
+        saved_boost = app.pending_settings.get("boost", caps.get("boost_active", True))
+        boost_row.set_active(saved_boost)
+        app.settings_boost_row = boost_row
+    else:
+        boost_row.set_sensitive(False)
+        boost_row.set_subtitle(
+            "Allows cores to automatically speed up past standard stock limits if thermal budget allows "
+            "<span color='#e01b24' weight='bold' size='small'>(Unsupported on this CPU)</span>"
+        )
+        app.settings_boost_row = None
+
+    grp_tune.add(boost_row)
+    main_box.append(grp_tune)
+
+    # 2. Power Automation Profile Switcher
     main_box.append(_build_section_header("Power Automation", "battery-symbolic"))
 
     grp_automation = Adw.PreferencesGroup()
@@ -424,7 +574,7 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
     ac_row.set_sensitive(app.ui_settings.get("auto_switch", False))
     bat_row.set_sensitive(app.ui_settings.get("auto_switch", False))
 
-    # 6. System and Tuning Startup Service Toggle & Factory Reset
+    # 3. System and Tuning Startup Service Toggle
     main_box.append(_build_section_header("System and Tuning", "preferences-system-symbolic"))
 
     grp_service = Adw.PreferencesGroup()
@@ -439,150 +589,9 @@ def _build_dashboard_page(app) -> Gtk.ScrolledWindow:
     app.switch_startup = switch_startup
     switch_startup.connect("notify::active", app.on_startup_switch_toggled)
     grp_service.add(switch_startup)
-
-    btn_reset = Gtk.Button()
-    btn_reset.set_tooltip_text("Wipe all settings, profiles, disable startup service, and revert to defaults")
-    btn_reset.add_css_class("destructive-action")
-    btn_reset.add_css_class("pill")
-    btn_reset.set_margin_top(16)
-    btn_reset.set_halign(Gtk.Align.CENTER)
-    
-    btn_reset_content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-    btn_reset_icon = Gtk.Image.new_from_icon_name("edit-clear-all-symbolic")
-    btn_reset_label = Gtk.Label(label="Factory Reset")
-    btn_reset_content.append(btn_reset_icon)
-    btn_reset_content.append(btn_reset_label)
-    btn_reset.set_child(btn_reset_content)
-    
-    btn_reset.connect("clicked", app.on_factory_reset_clicked)
-    grp_service.add(btn_reset)
     main_box.append(grp_service)
 
-    return scrolled
-
-
-def _build_settings_page(app) -> Gtk.ScrolledWindow:
-    """Build the core frequency controller and settings tuner page"""
-    scrolled, main_box = _make_page_scaffold("settings", "Settings")
-
-    caps = app.cpu_caps
-
-    # 1. Main Tuning Parameters Section
-    main_box.append(_build_section_header("Tune CPU Governor & Limits", "preferences-system-symbolic"))
-
-    grp_tune = Adw.PreferencesGroup()
-    grp_tune.set_description("Configure CPU frequency ranges and energy-efficiency behaviors")
-
-    # Governor Dropdown Row
-    gov_row = Adw.ComboRow()
-    gov_row.set_title("CPU scaling governor")
-    gov_row.set_subtitle("Defines policy algorithm used to scale frequencies")
-    gov_row.set_icon_name("system-run-symbolic")
-
-    governors = caps.get("governors", [])
-    model_gov = Gtk.StringList.new(governors)
-    gov_row.set_model(model_gov)
-
-    current_gov = app.pending_settings.get("governor", caps.get("current_governor", ""))
-    try:
-        idx = governors.index(current_gov)
-        gov_row.set_selected(idx)
-    except ValueError:
-        pass
-    grp_tune.add(gov_row)
-    app.settings_gov_row = gov_row
-
-    # EPP Dropdown Row (If EPP is available on this system)
-    if caps.get("epp_available"):
-        epps = caps.get("epp_preferences", [])
-        scaling_driver = caps.get("scaling_driver", "").lower()
-        cpu_vendor = caps.get("cpu_vendor", "").lower()
-
-        # Determine the right label for this system
-        if "amd" in scaling_driver or cpu_vendor == "amd":
-            epp_title = "AMD Energy Performance Preference (EPP)"
-            epp_subtitle = (
-                "Hint sent to AMD P-State firmware controlling the "
-                "energy/performance balance for hardware-autonomous scaling"
-            )
-        else:
-            epp_title = "Intel Energy Performance Preference (HWP)"
-            epp_subtitle = (
-                "Hint sent to Intel HWP firmware controlling the "
-                "energy/performance balance for hardware-autonomous scaling"
-            )
-
-        epp_row = Adw.ComboRow()
-        epp_row.set_title(epp_title)
-        epp_row.set_subtitle(epp_subtitle)
-        epp_row.set_icon_name("battery-symbolic")
-
-        model_epp = Gtk.StringList.new(epps)
-        epp_row.set_model(model_epp)
-
-        current_epp = app.pending_settings.get("epp", caps.get("current_epp", ""))
-        # Validate: if saved epp is not in actual sysfs list, fall back to current
-        if current_epp not in epps:
-            current_epp = caps.get("current_epp", "")
-        try:
-            idx = epps.index(current_epp)
-            epp_row.set_selected(idx)
-        except ValueError:
-            epp_row.set_selected(0)
-
-        if len(epps) == 1:
-            # Inform user why the list is limited (e.g. performance governor locks EPP)
-            epp_row.set_subtitle(
-                epp_subtitle
-                + " — only one option available with the current governor/driver mode"
-            )
-
-        grp_tune.add(epp_row)
-        app.settings_epp_row = epp_row
-    else:
-        app.settings_epp_row = None
-
-    # EPB Slider Row (If available)
-    if caps.get("epb_available"):
-        epb_action_row = Adw.ActionRow()
-        epb_action_row.set_title("Energy Performance Bias (EPB)")
-        epb_action_row.set_subtitle("Intel power register bias. Range: 0 (Max Perf) to 15 (Max Power Saving)")
-        epb_action_row.set_icon_name("battery-symbolic")
-
-        current_epb = app.pending_settings.get("epb", caps.get("current_epb", 6))
-        if current_epb is None:
-            current_epb = 6
-
-        epb_adj = Gtk.Adjustment(value=float(current_epb), lower=0.0, upper=15.0, step_increment=1.0, page_increment=3.0, page_size=0.0)
-        epb_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=epb_adj)
-        epb_scale.set_draw_value(True)
-        epb_scale.set_value_pos(Gtk.PositionType.RIGHT)
-        epb_scale.set_size_request(200, -1)
-        epb_scale.set_valign(Gtk.Align.CENTER)
-
-        epb_action_row.add_suffix(epb_scale)
-        grp_tune.add(epb_action_row)
-        app.settings_epb_scale = epb_scale
-    else:
-        app.settings_epb_scale = None
-
-    # Boost Switch Row
-    if caps.get("boost_supported"):
-        boost_row = Adw.SwitchRow()
-        boost_row.set_title("Core Performance Boost / Turbo Boost")
-        boost_row.set_subtitle("Allows cores to automatically speed up past standard stock limits if thermal budget allows")
-        boost_row.set_icon_name("media-flash-symbolic")
-
-        saved_boost = app.pending_settings.get("boost", caps.get("boost_active", True))
-        boost_row.set_active(saved_boost)
-        grp_tune.add(boost_row)
-        app.settings_boost_row = boost_row
-    else:
-        app.settings_boost_row = None
-
-    main_box.append(grp_tune)
-
-    # About Section
+    # 4. About Section
     main_box.append(_build_section_header("About", "help-about-symbolic"))
     
     group_about = Adw.PreferencesGroup()
@@ -610,6 +619,25 @@ def _build_settings_page(app) -> Gtk.ScrolledWindow:
     group_about.add(row_repo)
     
     main_box.append(group_about)
+
+    # 5. Factory Reset (Standalone placement matching Ryzenadj-gtk)
+    btn_reset = Gtk.Button()
+    btn_reset.set_tooltip_text("Wipe all settings, profiles, disable startup service, and revert to defaults")
+    btn_reset.add_css_class("destructive-action")
+    btn_reset.add_css_class("pill")
+    btn_reset.set_margin_top(24)
+    btn_reset.set_margin_bottom(16)
+    btn_reset.set_halign(Gtk.Align.CENTER)
+    
+    btn_reset_content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+    btn_reset_icon = Gtk.Image.new_from_icon_name("edit-clear-all-symbolic")
+    btn_reset_label = Gtk.Label(label="Factory Reset")
+    btn_reset_content.append(btn_reset_icon)
+    btn_reset_content.append(btn_reset_label)
+    btn_reset.set_child(btn_reset_content)
+    
+    btn_reset.connect("clicked", app.on_factory_reset_clicked)
+    main_box.append(btn_reset)
 
     return scrolled
 
@@ -677,7 +705,7 @@ def _build_profiles_page(app) -> Gtk.ScrolledWindow:
                 pdesc += " | Boost: On" if pdata["boost"] else " | Boost: Off"
             row.set_subtitle(pdesc)
 
-            btn_apply = Gtk.Button(icon_name="media-playback-start-symbolic")
+            btn_apply = Gtk.Button(icon_name="object-select-symbolic")
             btn_apply.add_css_class("flat")
             btn_apply.set_tooltip_text(f"Apply '{name}' profile")
             btn_apply.set_valign(Gtk.Align.CENTER)

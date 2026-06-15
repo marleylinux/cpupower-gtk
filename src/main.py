@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 APP_ID = "com.marley.cpupower-gtk"
 APP_NAME = "cpupower-gtk"
-APP_VER = "1.0.5"
+APP_VER = "1.0.6"
 
 
 
@@ -193,24 +193,31 @@ class CpupowerApp(Adw.Application):
         theme_palettes = {
             "default": {
                 "accent": "@accent_bg_color",
+                "cpu_fg": "#4cc9f0", "cpu_bg": "rgba(76, 201, 240, 0.12)",
             },
             "ryzen": {
                 "accent": "#ff3b30",
+                "cpu_fg": "#ffd60a", "cpu_bg": "rgba(255, 214, 10, 0.12)",
             },
             "geforce": {
                 "accent": "#76ff03",
+                "cpu_fg": "#00e5ff", "cpu_bg": "rgba(0, 229, 255, 0.12)",
             },
             "intel": {
                 "accent": "#0071e3",
+                "cpu_fg": "#ffea00", "cpu_bg": "rgba(255, 234, 0, 0.12)",
             },
             "arch": {
                 "accent": "#1793d1",
+                "cpu_fg": "#bf5af2", "cpu_bg": "rgba(191, 90, 242, 0.12)",
             },
             "saints": {
                 "accent": "#af52de",
+                "cpu_fg": "#ff3700", "cpu_bg": "rgba(255, 55, 0, 0.12)",
             },
             "noctua": {
                 "accent": "#9c6644",
+                "cpu_fg": "#e63946", "cpu_bg": "rgba(230, 57, 70, 0.12)",
             }
         }
 
@@ -230,6 +237,10 @@ class CpupowerApp(Adw.Application):
             css_lines.append(".suggested-action { background-color: @accent_bg_color; color: @accent_fg_color; }")
             css_lines.append(".apply-btn { background-color: @accent_bg_color; color: @accent_fg_color; box-shadow: 0 6px 16px alpha(@accent_bg_color, 0.35); }")
             css_lines.append(".apply-btn:hover { background-color: shade(@accent_bg_color, 1.25); box-shadow: 0 12px 28px alpha(@accent_bg_color, 0.5); }")
+
+        # Dynamic cpu_badge color definition matching Ryzenadj-gtk
+        css_lines.append(f"@define-color cpu_badge_fg {palette['cpu_fg']};")
+        css_lines.append(f"@define-color cpu_badge_bg {palette['cpu_bg']};")
 
         # Fun color palettes for dashboard tags based on the theme
         tag_palettes = {
@@ -473,33 +484,45 @@ class CpupowerApp(Adw.Application):
         min_row = getattr(self, "settings_min_row", None)
         if min_row:
             if has_fixed:
+                min_row._bottom_box.set_sensitive(False)
+                min_row._btn_clear.set_sensitive(False)
                 min_row._desc_label.set_markup(
                     f"<span style='italic' size='small'>{min_row._default_desc} "
                     f"<span color='#e01b24' weight='bold' size='small'>(Unsupported: conflicts with Fixed Frequency override)</span></span>"
                 )
             else:
+                min_row._bottom_box.set_sensitive(True)
+                min_row._btn_clear.set_sensitive(True)
                 min_row._desc_label.set_markup(f"<span style='italic' size='small'>{min_row._default_desc}</span>")
 
         # Max freq row
         max_row = getattr(self, "settings_max_row", None)
         if max_row:
             if has_fixed:
+                max_row._bottom_box.set_sensitive(False)
+                max_row._btn_clear.set_sensitive(False)
                 max_row._desc_label.set_markup(
                     f"<span style='italic' size='small'>{max_row._default_desc} "
                     f"<span color='#e01b24' weight='bold' size='small'>(Unsupported: conflicts with Fixed Frequency override)</span></span>"
                 )
             else:
+                max_row._bottom_box.set_sensitive(True)
+                max_row._btn_clear.set_sensitive(True)
                 max_row._desc_label.set_markup(f"<span style='italic' size='small'>{max_row._default_desc}</span>")
 
         # Fixed freq row
         fixed_row = getattr(self, "settings_fixed_row", None)
         if fixed_row:
             if has_min_max:
+                fixed_row._bottom_box.set_sensitive(False)
+                fixed_row._btn_clear.set_sensitive(False)
                 fixed_row._desc_label.set_markup(
                     f"<span style='italic' size='small'>{fixed_row._default_desc} "
                     f"<span color='#e01b24' weight='bold' size='small'>(Unsupported: conflicts with Min/Max range limits)</span></span>"
                 )
             else:
+                fixed_row._bottom_box.set_sensitive(True)
+                fixed_row._btn_clear.set_sensitive(True)
                 fixed_row._desc_label.set_markup(f"<span style='italic' size='small'>{fixed_row._default_desc}</span>")
 
     def get_settings_from_ui(self) -> dict:
@@ -598,6 +621,19 @@ class CpupowerApp(Adw.Application):
             self._load_pending_settings_to_ui()
         return False
 
+    def _on_preset_applied_done(self, ok: bool, msg: str, settings: dict) -> bool:
+        self._set_actions_sensitive(True)
+        self.btn_apply.set_label("Apply Settings")
+        self._show_toast(msg, is_error=not ok)
+
+        if ok:
+            self.applied_settings = dict(settings)
+            self.pending_settings = dict(settings)
+            self._do_refresh_async()
+        else:
+            self._load_pending_settings_to_ui()
+        return False
+
     def _set_actions_sensitive(self, sensitive: bool) -> None:
         btns = [self.btn_refresh, self.btn_apply, self.btn_ps, self.btn_bal, self.btn_mp]
         for btn in btns:
@@ -613,29 +649,18 @@ class CpupowerApp(Adw.Application):
     # ── Presets ────────────────────────────────────────────────────────────────
 
     def on_power_saving_clicked(self, _btn) -> None:
-        self.apply_preset_to_ui("power-saving")
+        self.apply_preset_to_ui("power-saving", save=True)
 
     def on_balanced_clicked(self, _btn) -> None:
-        self.apply_preset_to_ui("balanced")
+        self.apply_preset_to_ui("balanced", save=True)
 
     def on_max_performance_clicked(self, _btn) -> None:
-        self.apply_preset_to_ui("max-performance")
+        self.apply_preset_to_ui("max-performance", save=True)
 
-    def apply_preset_to_ui(self, preset: str):
+    def apply_preset_to_ui(self, preset: str, save: bool = True):
         caps = self.cpu_caps
-        phy_min = caps.get("cpuinfo_min", 0.0)
-        if phy_min <= 0.0:
-            phy_min = 600.0
-            
-        phy_max = caps.get("cpuinfo_max", 0.0)
-        if phy_max <= 0.0:
-            phy_max = 3000.0
 
         self._set_actions_sensitive(False)
-
-        # Clear any conflicting fixed frequency settings when applying a range preset
-        self.pending_settings.pop("use_fixed_freq", None)
-        self.pending_settings.pop("fixed_freq", None)
 
         if preset == "power-saving":
             govs = caps.get("governors", [])
@@ -656,9 +681,6 @@ class CpupowerApp(Adw.Application):
 
             if caps.get("boost_supported"):
                 self.pending_settings["boost"] = False
-
-            self.pending_settings["min_freq"] = float(phy_min)
-            self.pending_settings["max_freq"] = float(phy_min + (phy_max - phy_min) * 0.3)
 
         elif preset == "balanced":
             govs = caps.get("governors", [])
@@ -682,9 +704,6 @@ class CpupowerApp(Adw.Application):
             if caps.get("boost_supported"):
                 self.pending_settings["boost"] = True
 
-            self.pending_settings["min_freq"] = float(phy_min)
-            self.pending_settings["max_freq"] = float(phy_max)
-
         elif preset == "max-performance":
             govs = caps.get("governors", [])
             if "performance" in govs:
@@ -701,12 +720,38 @@ class CpupowerApp(Adw.Application):
             if caps.get("boost_supported"):
                 self.pending_settings["boost"] = True
 
-            self.pending_settings["min_freq"] = float(phy_max * 0.8)
-            self.pending_settings["max_freq"] = float(phy_max)
-
         self._load_pending_settings_to_ui()
         self._set_actions_sensitive(True)
-        self.on_settings_apply_clicked(None)
+
+        if save:
+            self.on_settings_apply_clicked(None)
+        else:
+            self._set_actions_sensitive(False)
+            self.btn_apply.set_label("Applying…")
+            backend_path = get_backend_path()
+            temp_config_path = os.path.expanduser("~/.config/cpupower-gtk/temp_profile.json")
+            try:
+                os.makedirs(os.path.dirname(temp_config_path), exist_ok=True)
+                with open(temp_config_path, "w") as f:
+                    json.dump(self.pending_settings, f)
+            except Exception as e:
+                self._show_toast(f"Failed to initiate write: {e}", is_error=True)
+                self._set_actions_sensitive(True)
+                return
+
+            def go():
+                cmd = ["pkexec", backend_path, "--apply-user-config", temp_config_path]
+                try:
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                    if res.returncode == 0:
+                        GLib.idle_add(self._on_preset_applied_done, True, "Preset applied successfully.", dict(self.pending_settings))
+                    else:
+                        err = (res.stderr or res.stdout or "Authorization cancelled.").strip()
+                        GLib.idle_add(self._on_preset_applied_done, False, f"Elevation failed: {err}", {})
+                except Exception as e:
+                    GLib.idle_add(self._on_preset_applied_done, False, f"Execution failed: {e}", {})
+
+            threading.Thread(target=go, daemon=True).start()
 
     # ── Power automation AC / battery profile triggers ─────────────────────────
 
@@ -734,10 +779,10 @@ class CpupowerApp(Adw.Application):
 
         if profile_name == "__power_saving__":
             self._show_toast(f"Applying Power Saving preset (on {source_label})", is_error=False)
-            self.apply_preset_to_ui("power-saving")
+            self.apply_preset_to_ui("power-saving", save=False)
         elif profile_name == "__max_performance__":
             self._show_toast(f"Applying Max Performance preset (on {source_label})", is_error=False)
-            self.apply_preset_to_ui("max-performance")
+            self.apply_preset_to_ui("max-performance", save=False)
         elif profile_name in profiles:
             self._show_toast(f"Applying profile '{profile_name}' (on {source_label})", is_error=False)
             self.on_apply_custom_profile(profile_name)

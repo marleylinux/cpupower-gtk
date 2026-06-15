@@ -297,16 +297,28 @@ def write_cpupower_config(settings: dict) -> None:
     use_fixed = settings.get("use_fixed_freq", False)
     fixed_freq = settings.get("fixed_freq")
 
+    # Check if we should emulate fixed frequency using min/max bounds
+    # (required for active EPP drivers like amd-pstate-epp/intel_pstate that don't support the userspace governor)
+    emulate_fixed = False
     if use_fixed and fixed_freq is not None:
+        caps = get_cpu_capabilities()
+        if "userspace" not in caps.get("governors", []):
+            emulate_fixed = True
+
+    if use_fixed and fixed_freq is not None and not emulate_fixed:
         lines.append(f"FREQ='{int(fixed_freq * 1000)}kHz'")
     else:
-        min_freq = settings.get("min_freq")
-        if min_freq is not None:
-            lines.append(f"MIN_FREQ='{int(min_freq * 1000)}kHz'")
+        if emulate_fixed:
+            lines.append(f"MIN_FREQ='{int(fixed_freq * 1000)}kHz'")
+            lines.append(f"MAX_FREQ='{int(fixed_freq * 1000)}kHz'")
+        else:
+            min_freq = settings.get("min_freq")
+            if min_freq is not None:
+                lines.append(f"MIN_FREQ='{int(min_freq * 1000)}kHz'")
 
-        max_freq = settings.get("max_freq")
-        if max_freq is not None:
-            lines.append(f"MAX_FREQ='{int(max_freq * 1000)}kHz'")
+            max_freq = settings.get("max_freq")
+            if max_freq is not None:
+                lines.append(f"MAX_FREQ='{int(max_freq * 1000)}kHz'")
 
     # EPP — Energy Performance Preference (AMD amd-pstate-epp / Intel HWP)
     # The value must come from energy_performance_available_preferences; we
@@ -352,33 +364,55 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
     use_fixed = settings.get("use_fixed_freq", False)
     fixed_freq = settings.get("fixed_freq")
     
+    # Check if we should emulate fixed frequency using min/max bounds
+    # (required for active EPP drivers like amd-pstate-epp/intel_pstate that don't support the userspace governor)
+    emulate_fixed = False
     if use_fixed and fixed_freq is not None:
+        if "userspace" not in caps.get("governors", []):
+            emulate_fixed = True
+    
+    if use_fixed and fixed_freq is not None and not emulate_fixed:
         fixed_freq_val = float(fixed_freq)
         if caps["cpuinfo_max"] > 0:
             fixed_freq_val = max(caps["cpuinfo_min"], min(caps["cpuinfo_max"], fixed_freq_val))
         cpupower_args = ["-f", f"{int(fixed_freq_val * 1000)}kHz"]
     else:
-        governor = settings.get("governor")
-        if governor and governor in caps["governors"]:
-            cpupower_args += ["-g", governor]
-
-        # Min freq: if specified, use it. If not, reset to cpuinfo_min (hardware default)
-        min_freq = settings.get("min_freq")
-        if min_freq is not None:
-            min_freq_val = float(min_freq)
+        if emulate_fixed:
+            fixed_freq_val = float(fixed_freq)
+            if caps["cpuinfo_max"] > 0:
+                fixed_freq_val = max(caps["cpuinfo_min"], min(caps["cpuinfo_max"], fixed_freq_val))
+            min_freq_val = fixed_freq_val
+            max_freq_val = fixed_freq_val
+            
+            cpupower_args = [
+                "-d", f"{int(min_freq_val * 1000)}kHz",
+                "-u", f"{int(max_freq_val * 1000)}kHz"
+            ]
+            governor = settings.get("governor")
+            if governor and governor in caps["governors"]:
+                cpupower_args += ["-g", governor]
         else:
-            min_freq_val = caps["cpuinfo_min"]
-        if min_freq_val > 0.0:
-            cpupower_args += ["-d", f"{int(min_freq_val * 1000)}kHz"]
+            governor = settings.get("governor")
+            if governor and governor in caps["governors"]:
+                cpupower_args += ["-g", governor]
 
-        # Max freq: if specified, use it. If not, reset to cpuinfo_max (hardware default)
-        max_freq = settings.get("max_freq")
-        if max_freq is not None:
-            max_freq_val = float(max_freq)
-        else:
-            max_freq_val = caps["cpuinfo_max"]
-        if max_freq_val > 0.0:
-            cpupower_args += ["-u", f"{int(max_freq_val * 1000)}kHz"]
+            # Min freq: if specified, use it. If not, reset to cpuinfo_min (hardware default)
+            min_freq = settings.get("min_freq")
+            if min_freq is not None:
+                min_freq_val = float(min_freq)
+            else:
+                min_freq_val = caps["cpuinfo_min"]
+            if min_freq_val > 0.0:
+                cpupower_args += ["-d", f"{int(min_freq_val * 1000)}kHz"]
+
+            # Max freq: if specified, use it. If not, reset to cpuinfo_max (hardware default)
+            max_freq = settings.get("max_freq")
+            if max_freq is not None:
+                max_freq_val = float(max_freq)
+            else:
+                max_freq_val = caps["cpuinfo_max"]
+            if max_freq_val > 0.0:
+                cpupower_args += ["-u", f"{int(max_freq_val * 1000)}kHz"]
 
     cpupower_ok = True
     cpupower_msg = ""
@@ -396,7 +430,7 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
                 fallback_ok = True
                 policy_dir = "/sys/devices/system/cpu/cpufreq/policy*"
                 
-                if use_fixed and fixed_freq is not None:
+                if use_fixed and fixed_freq is not None and not emulate_fixed:
                     if not _direct_write(f"{policy_dir}/scaling_setspeed", str(int(fixed_freq_val * 1000))):
                         fallback_ok = False
                 else:
@@ -538,13 +572,6 @@ def apply_settings(settings: dict, save: bool = True) -> tuple[bool, str]:
 def get_preset_settings(preset: str, caps: dict) -> dict:
     """Generate settings dict for a given preset based on CPU capabilities"""
     settings = {}
-    phy_min = caps.get("cpuinfo_min", 0.0)
-    if phy_min <= 0.0:
-        phy_min = 600.0
-        
-    phy_max = caps.get("cpuinfo_max", 0.0)
-    if phy_max <= 0.0:
-        phy_max = 3000.0
 
     if preset == "power-saving":
         govs = caps.get("governors", [])
@@ -565,9 +592,6 @@ def get_preset_settings(preset: str, caps: dict) -> dict:
 
         if caps.get("boost_supported"):
             settings["boost"] = False
-
-        settings["min_freq"] = float(phy_min)
-        settings["max_freq"] = float(phy_min + (phy_max - phy_min) * 0.3)
 
     elif preset == "balanced":
         govs = caps.get("governors", [])
@@ -591,9 +615,6 @@ def get_preset_settings(preset: str, caps: dict) -> dict:
         if caps.get("boost_supported"):
             settings["boost"] = True
 
-        settings["min_freq"] = float(phy_min)
-        settings["max_freq"] = float(phy_max)
-
     elif preset == "max-performance":
         govs = caps.get("governors", [])
         if "performance" in govs:
@@ -609,9 +630,6 @@ def get_preset_settings(preset: str, caps: dict) -> dict:
 
         if caps.get("boost_supported"):
             settings["boost"] = True
-
-        settings["min_freq"] = float(phy_max * 0.8)
-        settings["max_freq"] = float(phy_max)
 
     return settings
 

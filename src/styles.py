@@ -43,7 +43,7 @@ window.cpupower-win {
     padding: 0;
 }
 
-/* ─── Dashboard Hero Banner ────────────────────────────────── */
+/* ─── Dashboard Hero Banner (Ultra-Modern Overhaul) ───────── */
 .hero-box {
     padding: 24px;
     margin-bottom: 16px;
@@ -107,10 +107,9 @@ window.cpupower-win {
     font-weight: bold;
     letter-spacing: 0.5px;
     text-transform: uppercase;
-    animation: status-pulse 2s infinite;
 }
 
-/* ─── Category section headers ─────────────────────────────── */
+/* ─── Category section headers (Ptyxis Pro) ──────────────── */
 .section-title-box {
     margin-top: 24px;
     margin-bottom: 12px;
@@ -129,7 +128,7 @@ window.cpupower-win {
     -gtk-icon-size: 18px;
 }
 
-/* ─── Premium Monitor Cards ────────────────────────────────── */
+/* ─── Premium Monitor Cards (Glassy Pro Overhaul) ────────── */
 .monitor-card {
     background-color: alpha(@window_fg_color, 0.03);
     background-image: linear-gradient(145deg, alpha(@window_fg_color, 0.02), transparent);
@@ -165,6 +164,13 @@ window.cpupower-win {
     padding: 2px 6px;
 }
 
+.monitor-limit-badge.bottleneck {
+    background-color: alpha(@semantic_red, 0.2);
+    color: @semantic_red;
+    border-color: alpha(@semantic_red, 0.5);
+    animation: status-pulse 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .monitor-value-label {
     font-size: 24px;
     font-weight: 900;
@@ -185,7 +191,7 @@ window.cpupower-win {
     -gtk-icon-size: 16px;
 }
 
-/* ─── Usage level bars ─────────────────────────────────────── */
+/* ─── Usage level bars (Ultra-Soft Style) ────────────────── */
 progressbar.usage-bar {
     min-height: 8px;
     margin-top: 8px;
@@ -221,6 +227,11 @@ progressbar.usage-bar.high progress {
     box-shadow: 0 0 12px alpha(@semantic_red, 0.3);
 }
 
+progressbar.usage-bar.bottleneck progress {
+    background-color: @semantic_red;
+    box-shadow: 0 0 20px alpha(@semantic_red, 0.7);
+}
+
 /* ─── Slider rows (Setting Pages) ─────────────────────────── */
 .slider-row-item {
     border-radius: 16px;
@@ -254,8 +265,6 @@ progressbar.usage-bar.high progress {
     font-weight: 900;
     font-variant-numeric: tabular-nums;
 }
-
-
 
 /* ─── Setting Tags ─────────────────────────── */
 .tag-energy {
@@ -314,7 +323,7 @@ progressbar.usage-bar.high progress {
     border: 1px solid @live_badge_border;
 }
 
-/* ─── Preset buttons ───────────────────────────────────────── */
+/* ─── Preset buttons (Floating Action Feel) ───────────────── */
 .preset-row {
     padding: 16px 24px;
     background-color: transparent;
@@ -354,7 +363,7 @@ progressbar.usage-bar.high progress {
     border-color: alpha(@semantic_red, 0.4);
 }
 
-/* ─── Apply button ────────────────────────────────────────── */
+/* ─── Apply button (High Impact) ──────────────────────────── */
 .apply-btn {
     background-color: @accent_bg_color;
     color: @accent_fg_color;
@@ -373,7 +382,7 @@ progressbar.usage-bar.high progress {
     box-shadow: 0 12px 28px alpha(@accent_bg_color, 0.5);
 }
 
-/* ─── Navigation & Sidebar ─────────────────────────────────── */
+/* ─── Navigation & Sidebar (Ptyxis Style) ────────────────── */
 .sidebar-pane {
     background-color: @sidebar_bg_color;
     border-right: 1px solid alpha(@window_fg_color, 0.05);
@@ -445,6 +454,7 @@ progressbar.usage-bar.high progress {
     opacity: 0.7;
 }
 
+/* ─── Step jump buttons (±10, ±100) ──────────────────────── */
 .step-btn {
     font-size: 10px;
     font-weight: 900;
@@ -470,6 +480,7 @@ progressbar.usage-bar.high progress {
     background-color: alpha(@accent_bg_color, 0.2);
 }
 
+/* ─── Adjustment Buttons (+/- 0.5) ───────────────────────── */
 .adj-btn {
     min-width: 32px;
     min-height: 32px;
@@ -484,9 +495,9 @@ progressbar.usage-bar.high progress {
 }
 
 .cpu-badge {
-    background-color: alpha(#e5a50a, 0.15);
-    color: #e5a50a;
-    border: 1px solid alpha(#e5a50a, 0.4);
+    background-color: @cpu_badge_bg;
+    color: @cpu_badge_fg;
+    border: 1px solid alpha(@cpu_badge_fg, 0.4);
     border-radius: 10px;
     padding: 4px 10px;
     font-size: 11px;
