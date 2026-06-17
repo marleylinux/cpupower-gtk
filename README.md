@@ -19,28 +19,43 @@ Powered by [cpupower](https://github.com/torvalds/linux/tree/master/tools/power/
 - Auto switch profiles when you plug or unplug the charger
 - Works after sleep (restores your active settings automatically when the machine wakes up)
 - Integrates directly with the official systemd `cpupower.service` to apply settings on boot
+## Requirements
 
-## Installation
+- Python 3.11+
+- gtk4 + libadwaita + python-gobject
+- cpupower installed
 
-### Arch (makepkg)
+## Install
+
+**Arch (easiest):**
+
+```bash
+yay -S cpupower-gtk
+```
+
+Or build from this repo:
 
 ```bash
 git clone https://github.com/marleylinux/cpupower-gtk
+```
+```bash
 cd cpupower-gtk
 makepkg -si
 ```
 
-### Other Distros (Installer Script)
+**Other distros:**
 
 ```bash
 git clone https://github.com/marleylinux/cpupower-gtk
+```
+```bash
 cd cpupower-gtk
 sudo ./install.sh
 ```
 
-Then launch "cpupower-gtk" from your application menu or run `cpupower-gtk`.
+Then launch "cpupower-gtk" from your menu or just run `cpupower-gtk`.
 
-### Uninstall
+## Uninstall
 
 ```bash
 sudo ./uninstall.sh
