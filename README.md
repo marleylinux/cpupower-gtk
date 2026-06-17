@@ -6,8 +6,6 @@
 
 GTK4 frontend for cpupower. Just lets you adjust CPU governors, frequency limits, EPP/EPB preferences, and boost states without living in the terminal.
 
-Powered by [cpupower](https://github.com/torvalds/linux/tree/master/tools/power/cpupower) ❤️
-
 ## What it does
 
 - Dashboard showing active governor, driver, temperatures, and live core speeds
